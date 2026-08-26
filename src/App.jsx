@@ -22,6 +22,7 @@ import {
   Grid3x3,
   RefreshCw,
   ArrowUpDown,
+  Download,
 } from "lucide-react";
 
 // ---------- Seed data (Click A Yoga, Abu Dhabi) ----------
@@ -59,14 +60,33 @@ const seedClasses = [
 ];
 
 const seedPayments = [
-  { id: "p1", customerId: "c1", amount: 900, date: "2026-08-01", note: "Monthly Unlimited" },
-  { id: "p2", customerId: "c2", amount: 1200, date: "2026-07-10", note: "10-Class Pack" },
-  { id: "p3", customerId: "c4", amount: 1200, date: "2026-07-22", note: "10-Class Pack" },
+  { id: "p1", customerId: "c1", grossAmount: 900, discount: 0, amount: 900, date: "2026-08-01", note: "Monthly Unlimited" },
+  { id: "p2", customerId: "c2", grossAmount: 1200, discount: 100, amount: 1100, date: "2026-07-10", note: "10-Class Pack" },
+  { id: "p3", customerId: "c4", grossAmount: 1200, discount: 0, amount: 1200, date: "2026-07-22", note: "10-Class Pack" },
 ];
 
 const uid = (p) => `${p}${Math.random().toString(36).slice(2, 8)}`;
 
 const AED = (n) => `AED ${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+
+// Builds a CSV file from rows of {label, value} pairs per column and triggers a browser
+// download — works directly in Excel without needing any extra library.
+const downloadCSV = (filename, headers, rows) => {
+  const escape = (val) => {
+    const s = val === null || val === undefined ? "" : String(val);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [headers.map(escape).join(","), ...rows.map((row) => row.map(escape).join(","))];
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
 
 // Unlimited packages don't have a per-class count, so a per-class price is estimated
 // against this many classes/month for commission purposes.
@@ -383,15 +403,18 @@ function Dashboard({ trainers, customers, classes, payments, packages }) {
   );
 }
 
-function Customers({ customers, setCustomers, packages }) {
+function Customers({ customers, setCustomers, packages, payments, setPayments }) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [source, setSource] = useState("new"); // "new" or "existing" — only relevant while adding
   const [existingPersonKey, setExistingPersonKey] = useState("");
-  const blankForm = { name: "", phone: "", email: "", location: "", packageId: packages[0]?.id, classesRemaining: packages[0]?.classes ?? "—" };
+  const blankForm = { name: "", phone: "", email: "", location: "", packageId: packages[0]?.id, classesRemaining: packages[0]?.classes ?? "—", discount: 0 };
   const [form, setForm] = useState(blankForm);
 
   const packageName = (id) => packages.find((p) => p.id === id)?.name || "—";
+  const selectedPackage = packages.find((p) => p.id === form.packageId);
+  const grossForForm = selectedPackage?.price || 0;
+  const finalForForm = Math.max(0, grossForForm - (Number(form.discount) || 0));
 
   // One entry per distinct person (by name), using their most recent contact details —
   // powers the "existing customer" picker so a renewal doesn't need retyping.
@@ -420,9 +443,19 @@ function Customers({ customers, setCustomers, packages }) {
   };
 
   // Edits this exact line item in place — corrects a mistake, doesn't create a new row.
+  // Pulls the discount from that row's existing payment, if one was already generated.
   const startEdit = (c) => {
     setEditingId(c.id);
-    setForm({ name: c.name, phone: c.phone, email: c.email || "", location: c.location || "", packageId: c.packageId, classesRemaining: c.classesRemaining });
+    const existingPayment = payments.find((p) => p.customerId === c.id);
+    setForm({
+      name: c.name,
+      phone: c.phone,
+      email: c.email || "",
+      location: c.location || "",
+      packageId: c.packageId,
+      classesRemaining: c.classesRemaining,
+      discount: existingPayment?.discount || 0,
+    });
     setOpen(true);
   };
 
@@ -432,24 +465,81 @@ function Customers({ customers, setCustomers, packages }) {
     setEditingId(null);
     setSource("existing");
     setExistingPersonKey(c.name);
-    setForm({ name: c.name, phone: c.phone, email: c.email || "", location: c.location || "", packageId: packages[0]?.id, classesRemaining: packages[0]?.classes ?? "—" });
+    setForm({ name: c.name, phone: c.phone, email: c.email || "", location: c.location || "", packageId: packages[0]?.id, classesRemaining: packages[0]?.classes ?? "—", discount: 0 });
     setOpen(true);
   };
 
+  // Saving a customer automatically generates (or updates) the matching payment record
+  // from the selected package's price, minus whatever discount was entered here — no
+  // separate "log payment" step needed.
   const submit = () => {
     if (!form.name) return;
+    const { discount, ...customerFields } = form;
+    const pkg = packages.find((p) => p.id === form.packageId);
+    const gross = pkg?.price || 0;
+    const discountAmount = Number(discount) || 0;
+    const finalAmount = Math.max(0, gross - discountAmount);
+
     if (editingId) {
-      setCustomers((cs) => cs.map((c) => (c.id === editingId ? { ...c, ...form } : c)));
+      setCustomers((cs) => cs.map((c) => (c.id === editingId ? { ...c, ...customerFields } : c)));
+      setPayments((ps) => {
+        const exists = ps.some((p) => p.customerId === editingId);
+        if (exists) {
+          return ps.map((p) =>
+            p.customerId === editingId
+              ? { ...p, note: pkg?.name || p.note, grossAmount: gross, discount: discountAmount, amount: finalAmount }
+              : p
+          );
+        }
+        return [...ps, { id: uid("p"), date: new Date().toISOString().slice(0, 10), customerId: editingId, note: pkg?.name || "", grossAmount: gross, discount: discountAmount, amount: finalAmount }];
+      });
     } else {
-      setCustomers((cs) => [...cs, { id: uid("c"), joined: new Date().toISOString().slice(0, 10), ...form }]);
+      const newId = uid("c");
+      setCustomers((cs) => [...cs, { id: newId, joined: new Date().toISOString().slice(0, 10), ...customerFields }]);
+      setPayments((ps) => [
+        ...ps,
+        { id: uid("p"), date: new Date().toISOString().slice(0, 10), customerId: newId, note: pkg?.name || "", grossAmount: gross, discount: discountAmount, amount: finalAmount },
+      ]);
     }
     setForm(blankForm);
     setOpen(false);
   };
 
-  const removeCustomer = (id) => setCustomers((cs) => cs.filter((c) => c.id !== id));
+  // Removing a customer line item also removes its generated payment, keeping the ledger clean.
+  const removeCustomer = (id) => {
+    setCustomers((cs) => cs.filter((c) => c.id !== id));
+    setPayments((ps) => ps.filter((p) => p.customerId !== id));
+  };
 
-  const sorted = [...customers].sort((a, b) => a.name.localeCompare(b.name) || a.joined.localeCompare(b.joined));
+  const [joinedFrom, setJoinedFrom] = useState("");
+  const [joinedTo, setJoinedTo] = useState("");
+
+  const sorted = [...customers]
+    .filter((c) => (!joinedFrom || c.joined >= joinedFrom) && (!joinedTo || c.joined <= joinedTo))
+    .sort((a, b) => a.name.localeCompare(b.name) || a.joined.localeCompare(b.joined));
+
+  const isFiltered = joinedFrom || joinedTo;
+  const clearJoinedFilter = () => { setJoinedFrom(""); setJoinedTo(""); };
+
+  const exportCustomersCSV = () => {
+    downloadCSV(
+      `click-a-yoga-customers-${new Date().toISOString().slice(0, 10)}.csv`,
+      ["Name", "Phone", "Email", "Location", "Package", "Classes Remaining", "Joined"],
+      sorted.map((c) => [c.name, c.phone, c.email || "", c.location || "", packageName(c.packageId), c.classesRemaining, c.joined])
+    );
+  };
+
+  const nameOf = (id) => customers.find((c) => c.id === id)?.name || "—";
+  const removePayment = (id) => setPayments((ps) => ps.filter((p) => p.id !== id));
+  const sortedPayments = [...payments].sort((a, b) => b.date.localeCompare(a.date));
+
+  const exportPaymentsCSV = () => {
+    downloadCSV(
+      `click-a-yoga-payments-${new Date().toISOString().slice(0, 10)}.csv`,
+      ["Customer", "Package/Note", "Gross Amount", "Discount", "Amount Collected", "Date"],
+      sortedPayments.map((p) => [nameOf(p.customerId), p.note, p.grossAmount ?? p.amount, p.discount || 0, p.amount, p.date])
+    );
+  };
 
   return (
     <div>
@@ -457,14 +547,35 @@ function Customers({ customers, setCustomers, packages }) {
         eyebrow="Members"
         title="Customers"
         action={
-          <button
-            onClick={startAdd}
-            className="flex items-center gap-1.5 bg-green-700 text-white text-sm px-3 py-2 rounded-md hover:bg-green-800"
-          >
-            <Plus size={14} /> Add customer
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={exportCustomersCSV}
+              className="flex items-center gap-1.5 text-green-700 text-sm px-3 py-2 rounded-md border border-green-100 hover:bg-green-50"
+              title="Download customer list as Excel/CSV"
+            >
+              <Download size={14} /> Export
+            </button>
+            <button
+              onClick={startAdd}
+              className="flex items-center gap-1.5 bg-green-700 text-white text-sm px-3 py-2 rounded-md hover:bg-green-800"
+            >
+              <Plus size={14} /> Add customer
+            </button>
+          </div>
         }
       />
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <span className="text-xs text-green-600">Joined between</span>
+        <input type="date" className={`${inputCls} w-auto`} value={joinedFrom} onChange={(e) => setJoinedFrom(e.target.value)} />
+        <span className="text-xs text-green-600">and</span>
+        <input type="date" className={`${inputCls} w-auto`} value={joinedTo} onChange={(e) => setJoinedTo(e.target.value)} />
+        {isFiltered && (
+          <button onClick={clearJoinedFilter} className="flex items-center gap-1 text-xs text-green-600 hover:text-green-900 underline">
+            <X size={12} /> Clear
+          </button>
+        )}
+        {isFiltered && <span className="text-xs text-green-600">({sorted.length} match{sorted.length === 1 ? "" : "es"})</span>}
+      </div>
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
         <table className="w-full text-sm min-w-[920px]">
@@ -595,11 +706,67 @@ function Customers({ customers, setCustomers, packages }) {
               onChange={(e) => setForm({ ...form, classesRemaining: e.target.value === "—" ? e.target.value : Number(e.target.value) })}
             />
           </Field>
+          <Field label="Discount (AED, optional)">
+            <input type="number" className={inputCls} value={form.discount} onChange={(e) => setForm({ ...form, discount: e.target.value })} />
+          </Field>
+          <div className="flex items-center justify-between text-sm bg-green-50 text-green-700 rounded-md px-3 py-2 mb-3">
+            <span>Amount to collect ({selectedPackage?.name || "package"})</span>
+            <span className="font-medium text-green-900">{AED(finalForForm)}</span>
+          </div>
           <button onClick={submit} className="w-full bg-green-500 text-white rounded-md py-2 text-sm mt-2 hover:bg-green-600">
             {editingId ? "Save changes" : "Save customer"}
           </button>
         </Modal>
       )}
+
+      <div className="mt-8">
+        <SectionTitle
+          eyebrow="Ledger"
+          title="Customer payments"
+          action={
+            <button
+              onClick={exportPaymentsCSV}
+              className="flex items-center gap-1.5 text-green-700 text-sm px-3 py-2 rounded-md border border-green-100 hover:bg-green-50"
+              title="Download payment ledger as Excel/CSV"
+            >
+              <Download size={14} /> Export
+            </button>
+          }
+        />
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[640px]">
+            <thead className="bg-green-50 text-green-700 text-xs uppercase tracking-wide">
+              <tr>
+                <th className="text-left px-4 py-3">Customer</th>
+                <th className="text-left px-4 py-3">Package/Note</th>
+                <th className="text-left px-4 py-3">Discount</th>
+                <th className="text-left px-4 py-3">Amount collected</th>
+                <th className="text-left px-4 py-3">Date</th>
+                <th className="text-left px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedPayments.map((p) => (
+                <tr key={p.id} className="border-t border-gray-100">
+                  <td className="px-4 py-3 text-green-900 font-medium whitespace-nowrap">{nameOf(p.customerId)}</td>
+                  <td className="px-4 py-3 text-green-700 whitespace-nowrap">{p.note}</td>
+                  <td className="px-4 py-3 text-green-700 whitespace-nowrap">{p.discount ? AED(p.discount) : "—"}</td>
+                  <td className="px-4 py-3 text-green-700 flex items-center gap-1 whitespace-nowrap"><Wallet size={12} />{AED(p.amount)}</td>
+                  <td className="px-4 py-3 text-green-700 whitespace-nowrap">{p.date}</td>
+                  <td className="px-4 py-3">
+                    <button onClick={() => removePayment(p.id)} className="text-green-600 hover:text-red-500" title="Delete payment">
+                      <Trash2 size={15} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          </div>
+        </Card>
+      </div>
+
     </div>
   );
 }
@@ -825,6 +992,17 @@ function Schedule({ classes, setClasses, trainers, customers, packages }) {
   const nameOf = (list, id) => list.find((x) => x.id === id)?.name || "—";
   const firstName = (name) => name.replace(/^Dr\.\s*/i, "").split(" ")[0];
 
+  const exportSessionsCSV = () => {
+    const rows = [...classes]
+      .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
+      .map((c) => [c.date, c.time, nameOf(trainers, c.trainerId), nameOf(customers, c.customerId), c.status]);
+    downloadCSV(
+      `click-a-yoga-sessions-${new Date().toISOString().slice(0, 10)}.csv`,
+      ["Date", "Time", "Trainer", "Customer", "Status"],
+      rows
+    );
+  };
+
   const startAdd = (presetDate) => {
     setEditingId(null);
     setForm(presetDate ? { ...blankForm, date: presetDate } : blankForm);
@@ -933,6 +1111,13 @@ function Schedule({ classes, setClasses, trainers, customers, packages }) {
                   <ArrowUpDown size={13} /> {sortDir === "asc" ? "Oldest first" : "Newest first"}
                 </button>
               )}
+              <button
+                onClick={exportSessionsCSV}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs whitespace-nowrap text-green-700 border border-green-100 hover:bg-green-50"
+                title="Download sessions as Excel/CSV"
+              >
+                <Download size={13} /> Export
+              </button>
               <button
                 onClick={() => startAdd()}
                 className="flex items-center justify-center gap-1.5 bg-green-700 text-white text-sm px-3 py-2 rounded-md hover:bg-green-800 whitespace-nowrap flex-1 sm:flex-none"
@@ -1187,11 +1372,24 @@ function Utilization({ trainers, classes, commissions }) {
     return (d.getDay() + 6) % 7; // Monday-first
   };
 
+  const [weekStart, setWeekStart] = useState("2026-08-24"); // a Monday
+  const pad = (n) => String(n).padStart(2, "0");
+  const addDays = (dateStr, n) => {
+    const d = new Date(`${dateStr}T00:00:00`);
+    d.setDate(d.getDate() + n);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+  const shiftWeek = (delta) => setWeekStart((ws) => addDays(ws, delta * 7));
+  const weekEnd = addDays(weekStart, 6);
+  const formatShort = (dateStr) => new Date(`${dateStr}T00:00:00`).toLocaleString("en-US", { month: "short", day: "numeric" });
+  const weekLabel = `${formatShort(weekStart)} – ${formatShort(weekEnd)}, ${weekStart.slice(0, 4)}`;
+  const weekClasses = classes.filter((c) => c.date >= weekStart && c.date <= weekEnd);
+
   const heat = trainers.map((t) => {
     const counts = days.map(() => 0);
     let completed = 0;
     let upcoming = 0;
-    classes
+    weekClasses
       .filter((c) => c.trainerId === t.id)
       .forEach((c) => {
         counts[dayIndex(c.date)]++;
@@ -1245,7 +1443,21 @@ function Utilization({ trainers, classes, commissions }) {
         ))}
       </div>
 
-      <SectionTitle eyebrow="Weekly pattern" title="Class load by day" />
+      <SectionTitle
+        eyebrow="Weekly pattern"
+        title="Class load by day"
+        action={
+          <div className="flex items-center gap-2">
+            <button onClick={() => shiftWeek(-1)} className="p-1.5 rounded-md text-green-600 hover:bg-green-50 hover:text-green-900">
+              <ChevronLeft size={16} />
+            </button>
+            <span className="text-sm text-green-900 font-medium whitespace-nowrap">{weekLabel}</span>
+            <button onClick={() => shiftWeek(1)} className="p-1.5 rounded-md text-green-600 hover:bg-green-50 hover:text-green-900">
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        }
+      />
       <Card className="p-5">
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[560px]">
@@ -1283,29 +1495,13 @@ function Utilization({ trainers, classes, commissions }) {
             </tbody>
           </table>
         </div>
-        <p className="text-xs text-green-600 mt-4">Counts include both completed and upcoming classes, across all logged dates.</p>
+        <p className="text-xs text-green-600 mt-4">Counts include both completed and upcoming classes for the selected week.</p>
       </Card>
     </div>
   );
 }
 
-function CommissionTab({ commissions, payments, customers, setPayments, packages }) {
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ customerId: customers[0]?.id, amount: 500, note: "" });
-
-  const pickPackage = (id) => {
-    const pkg = packages.find((p) => p.id === id);
-    if (!pkg) return;
-    setForm({ ...form, amount: pkg.price, note: pkg.name });
-  };
-
-  const submit = () => {
-    setPayments((ps) => [...ps, { id: uid("p"), date: new Date().toISOString().slice(0, 10), ...form }]);
-    setOpen(false);
-  };
-
-  const nameOf = (id) => customers.find((c) => c.id === id)?.name || "—";
-
+function CommissionTab({ commissions }) {
   return (
     <div>
       <SectionTitle eyebrow="Payroll engine" title="Commission — this cycle" />
@@ -1326,67 +1522,6 @@ function CommissionTab({ commissions, payments, customers, setPayments, packages
           </Card>
         ))}
       </div>
-
-      <SectionTitle
-        eyebrow="Ledger"
-        title="Customer payments"
-        action={
-          <button onClick={() => setOpen(true)} className="flex items-center gap-1.5 bg-green-700 text-white text-sm px-3 py-2 rounded-md hover:bg-green-800">
-            <Plus size={14} /> Log payment
-          </button>
-        }
-      />
-      <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[560px]">
-          <thead className="bg-green-50 text-green-700 text-xs uppercase tracking-wide">
-            <tr>
-              <th className="text-left px-4 py-3">Customer</th>
-              <th className="text-left px-4 py-3">Amount</th>
-              <th className="text-left px-4 py-3">Note</th>
-              <th className="text-left px-4 py-3">Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            {payments.map((p) => (
-              <tr key={p.id} className="border-t border-gray-100">
-                <td className="px-4 py-3 text-green-900 font-medium">{nameOf(p.customerId)}</td>
-                <td className="px-4 py-3 text-green-700 flex items-center gap-1"><Wallet size={12} />{AED(p.amount)}</td>
-                <td className="px-4 py-3 text-green-700">{p.note}</td>
-                <td className="px-4 py-3 text-green-700">{p.date}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        </div>
-      </Card>
-
-      {open && (
-        <Modal title="Log payment" onClose={() => setOpen(false)}>
-          <Field label="Customer">
-            <select className={inputCls} value={form.customerId} onChange={(e) => setForm({ ...form, customerId: e.target.value })}>
-              {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Package (optional — fills amount)">
-            <select className={inputCls} defaultValue="" onChange={(e) => pickPackage(e.target.value)}>
-              <option value="" disabled>Select a package…</option>
-              {packages.map((p) => (
-                <option key={p.id} value={p.id}>{p.name} — {AED(p.price)}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Amount (AED)">
-            <input type="number" className={inputCls} value={form.amount} onChange={(e) => setForm({ ...form, amount: Number(e.target.value) })} />
-          </Field>
-          <Field label="Note">
-            <input className={inputCls} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="e.g. 10-Class Pack renewal" />
-          </Field>
-          <button onClick={submit} className="w-full bg-green-500 text-white rounded-md py-2 text-sm mt-2 hover:bg-green-600">
-            Save payment
-          </button>
-        </Modal>
-      )}
     </div>
   );
 }
@@ -1580,14 +1715,12 @@ export default function App() {
           {tab === "dashboard" && (
             <Dashboard trainers={trainers} customers={customers} classes={classes} payments={payments} packages={packages} />
           )}
-          {tab === "customers" && <Customers customers={customers} setCustomers={setCustomers} packages={packages} />}
+          {tab === "customers" && <Customers customers={customers} setCustomers={setCustomers} packages={packages} payments={payments} setPayments={setPayments} />}
           {tab === "packages" && <Packages packages={packages} setPackages={setPackages} />}
           {tab === "trainers" && <Trainers trainers={trainers} setTrainers={setTrainers} />}
           {tab === "schedule" && <Schedule classes={classes} setClasses={setClasses} trainers={trainers} customers={customers} packages={packages} />}
           {tab === "utilization" && <Utilization trainers={trainers} classes={classes} commissions={commissions} />}
-          {tab === "commission" && (
-            <CommissionTab commissions={commissions} payments={payments} customers={customers} setPayments={setPayments} packages={packages} />
-          )}
+          {tab === "commission" && <CommissionTab commissions={commissions} />}
         </div>
       </div>
     </div>
