@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient.js";
 import {
   LayoutDashboard,
@@ -23,6 +23,8 @@ import {
   RefreshCw,
   ArrowUpDown,
   Download,
+  MapPin,
+  Search,
 } from "lucide-react";
 
 // ---------- Seed data (Click A Yoga, Abu Dhabi) ----------
@@ -988,17 +990,23 @@ function Schedule({ classes, setClasses, trainers, customers, packages }) {
   const [viewMonth, setViewMonth] = useState({ year: 2026, month: 7 }); // August 2026, 0-indexed
   const [weekStart, setWeekStart] = useState("2026-08-24"); // a Monday
   const [dayDate, setDayDate] = useState("2026-08-27");
+  const [customerFilter, setCustomerFilter] = useState("");
 
   const nameOf = (list, id) => list.find((x) => x.id === id)?.name || "—";
+  const locationOf = (customerId) => customers.find((c) => c.id === customerId)?.location || "—";
   const firstName = (name) => name.replace(/^Dr\.\s*/i, "").split(" ")[0];
 
+  const filteredClasses = customerFilter.trim()
+    ? classes.filter((c) => nameOf(customers, c.customerId).toLowerCase().includes(customerFilter.trim().toLowerCase()))
+    : classes;
+
   const exportSessionsCSV = () => {
-    const rows = [...classes]
+    const rows = [...filteredClasses]
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
-      .map((c) => [c.date, c.time, nameOf(trainers, c.trainerId), nameOf(customers, c.customerId), c.status]);
+      .map((c) => [c.date, c.time, nameOf(trainers, c.trainerId), nameOf(customers, c.customerId), locationOf(c.customerId), c.status]);
     downloadCSV(
       `click-a-yoga-sessions-${new Date().toISOString().slice(0, 10)}.csv`,
-      ["Date", "Time", "Trainer", "Customer", "Status"],
+      ["Date", "Time", "Trainer", "Customer", "Location", "Status"],
       rows
     );
   };
@@ -1029,7 +1037,7 @@ function Schedule({ classes, setClasses, trainers, customers, packages }) {
   const toggleComplete = (id) =>
     setClasses((cs) => cs.map((c) => (c.id === id ? { ...c, status: c.status === "completed" ? "scheduled" : "completed" } : c)));
 
-  const sorted = [...classes].sort((a, b) => {
+  const sorted = [...filteredClasses].sort((a, b) => {
     const cmp = (a.date + a.time).localeCompare(b.date + b.time);
     return sortDir === "asc" ? cmp : -cmp;
   });
@@ -1046,7 +1054,7 @@ function Schedule({ classes, setClasses, trainers, customers, packages }) {
   const cells = [...Array(startWeekday).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
   while (cells.length % 7 !== 0) cells.push(null);
   const classesByDate = {};
-  classes.forEach((c) => {
+  filteredClasses.forEach((c) => {
     (classesByDate[c.date] = classesByDate[c.date] || []).push(c);
   });
   Object.values(classesByDate).forEach((list) => list.sort((a, b) => a.time.localeCompare(b.time)));
@@ -1129,16 +1137,36 @@ function Schedule({ classes, setClasses, trainers, customers, packages }) {
         }
       />
 
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="relative">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-green-500" />
+          <input
+            type="text"
+            value={customerFilter}
+            onChange={(e) => setCustomerFilter(e.target.value)}
+            placeholder="Filter by customer name…"
+            className={`${inputCls} w-auto pl-8`}
+          />
+        </div>
+        {customerFilter && (
+          <button onClick={() => setCustomerFilter("")} className="flex items-center gap-1 text-xs text-green-600 hover:text-green-900 underline">
+            <X size={12} /> Clear
+          </button>
+        )}
+        {customerFilter && <span className="text-xs text-green-600">({filteredClasses.length} session{filteredClasses.length === 1 ? "" : "s"})</span>}
+      </div>
+
       {view === "list" && (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[640px]">
+          <table className="w-full text-sm min-w-[760px]">
             <thead className="bg-green-50 text-green-700 text-xs uppercase tracking-wide">
               <tr>
                 <th className="text-left px-4 py-3">Date</th>
                 <th className="text-left px-4 py-3">Time</th>
                 <th className="text-left px-4 py-3">Trainer</th>
                 <th className="text-left px-4 py-3">Customer</th>
+                <th className="text-left px-4 py-3">Location</th>
                 <th className="text-left px-4 py-3">Status</th>
                 <th className="text-left px-4 py-3"></th>
               </tr>
@@ -1150,6 +1178,7 @@ function Schedule({ classes, setClasses, trainers, customers, packages }) {
                   <td className="px-4 py-3 text-green-700">{c.time}</td>
                   <td className="px-4 py-3 text-green-700">{nameOf(trainers, c.trainerId)}</td>
                   <td className="px-4 py-3 text-green-700">{nameOf(customers, c.customerId)}</td>
+                  <td className="px-4 py-3 text-green-700">{locationOf(c.customerId)}</td>
                   <td className="px-4 py-3">
                     <span className={`text-xs px-2 py-1 rounded-full ${c.status === "completed" ? "bg-green-100 text-green-700" : "bg-green-50 text-green-600"}`}>
                       {c.status}
@@ -1198,11 +1227,14 @@ function Schedule({ classes, setClasses, trainers, customers, packages }) {
             <div className="space-y-2">
               {dayClassesSorted.map((c) => (
                 <div key={c.id} className="flex items-center justify-between rounded-md border border-gray-100 px-3 py-2.5">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 flex-wrap">
                     <span className="text-sm font-medium text-green-900 w-14">{c.time}</span>
                     <div className="text-sm text-green-700">
                       <span className="text-green-900">{nameOf(trainers, c.trainerId)}</span> · {nameOf(customers, c.customerId)}
                     </div>
+                    <span className="flex items-center gap-1 text-xs text-green-600">
+                      <MapPin size={12} /> {locationOf(c.customerId)}
+                    </span>
                     <span className={`text-xs px-2 py-1 rounded-full ${c.status === "completed" ? "bg-green-100 text-green-700" : "bg-green-50 text-green-600"}`}>
                       {c.status}
                     </span>
@@ -1257,10 +1289,11 @@ function Schedule({ classes, setClasses, trainers, customers, packages }) {
                         className={`w-full text-left text-[11px] leading-tight px-1.5 py-1 rounded ${
                           c.status === "completed" ? "bg-green-100 text-green-700" : "bg-green-50 text-green-700"
                         }`}
-                        title={`${nameOf(trainers, c.trainerId)} · ${nameOf(customers, c.customerId)}`}
+                        title={`${nameOf(trainers, c.trainerId)} · ${nameOf(customers, c.customerId)} · ${locationOf(c.customerId)}`}
                       >
                         <div className="font-medium">{c.time} {firstName(nameOf(trainers, c.trainerId))}</div>
                         <div className="truncate">{nameOf(customers, c.customerId)}</div>
+                        <div className="truncate opacity-70">{locationOf(c.customerId)}</div>
                       </button>
                     ))}
                   </div>
@@ -1308,9 +1341,10 @@ function Schedule({ classes, setClasses, trainers, customers, packages }) {
                         className={`w-full text-left text-[10px] leading-tight px-1.5 py-1 rounded ${
                           c.status === "completed" ? "bg-green-100 text-green-700" : "bg-green-50 text-green-700"
                         }`}
-                        title={`${nameOf(trainers, c.trainerId)} · ${nameOf(customers, c.customerId)}`}
+                        title={`${nameOf(trainers, c.trainerId)} · ${nameOf(customers, c.customerId)} · ${locationOf(c.customerId)}`}
                       >
-                        {c.time} {firstName(nameOf(trainers, c.trainerId))}
+                        <div className="truncate font-medium">{c.time} {firstName(nameOf(trainers, c.trainerId))}</div>
+                        <div className="truncate opacity-70">{locationOf(c.customerId)}</div>
                       </button>
                     ))}
                   </div>
@@ -1348,12 +1382,19 @@ function Schedule({ classes, setClasses, trainers, customers, packages }) {
             const remaining = selectedCustomer.classesRemaining;
             const isLow = typeof remaining === "number" && remaining <= 0;
             return (
-              <div className={`flex items-center justify-between text-xs rounded-md px-3 py-2 mb-3 ${isLow ? "bg-red-50 text-red-600" : "bg-green-50 text-green-700"}`}>
-                <span>{selectedPackage ? selectedPackage.name : "No package on file"}</span>
-                <span className="font-medium">
-                  {remaining === "—" ? "Unlimited" : isLow ? "0 classes left" : `${remaining} classes left`}
-                </span>
-              </div>
+              <>
+                <div className={`flex items-center justify-between text-xs rounded-md px-3 py-2 mb-1 ${isLow ? "bg-red-50 text-red-600" : "bg-green-50 text-green-700"}`}>
+                  <span>{selectedPackage ? selectedPackage.name : "No package on file"}</span>
+                  <span className="font-medium">
+                    {remaining === "—" ? "Unlimited" : isLow ? "0 classes left" : `${remaining} classes left`}
+                  </span>
+                </div>
+                {selectedCustomer.location && (
+                  <div className="flex items-center gap-1 text-xs text-green-600 mb-3">
+                    <MapPin size={12} /> {selectedCustomer.location}
+                  </div>
+                )}
+              </>
             );
           })()}
           <button onClick={submit} className="w-full bg-green-500 text-white rounded-md py-2 text-sm mt-2 hover:bg-green-600">
@@ -1365,13 +1406,39 @@ function Schedule({ classes, setClasses, trainers, customers, packages }) {
   );
 }
 
-function Utilization({ trainers, classes, commissions }) {
+function Utilization({ trainers, classes, customers, packages }) {
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   const dayIndex = (dateStr) => {
     const d = new Date(`${dateStr}T00:00:00`);
     return (d.getDay() + 6) % 7; // Monday-first
   };
 
+  // ----- Overall period (drives stats + commission progress below) -----
+  const [mode, setMode] = useState("month");
+  const [month, setMonth] = useState("2026-08");
+  const [startDate, setStartDate] = useState("2026-08-01");
+  const [endDate, setEndDate] = useState("2026-08-31");
+  const inPeriod = (dateStr) => (mode === "month" ? dateStr.startsWith(month) : dateStr >= startDate && dateStr <= endDate);
+  const periodClasses = classes.filter((c) => inPeriod(c.date));
+
+  const commissions = trainers.map((t) => {
+    const completed = periodClasses.filter((c) => c.trainerId === t.id && c.status === "completed").length;
+    const commissionEarned = trainerCommission(t, periodClasses, customers, packages);
+    return {
+      trainer: t,
+      completed,
+      commissionEarned,
+      progress: t.monthlyTarget ? completed / t.monthlyTarget : 0,
+    };
+  });
+
+  const avgUtilization = commissions.length
+    ? Math.round((commissions.reduce((s, c) => s + Math.min(1, c.progress), 0) / commissions.length) * 100)
+    : 0;
+  const totalCompleted = periodClasses.filter((c) => c.status === "completed").length;
+  const totalUpcoming = periodClasses.filter((c) => c.status === "scheduled").length;
+
+  // ----- Weekly pattern (its own week navigator, independent of the period above) -----
   const [weekStart, setWeekStart] = useState("2026-08-24"); // a Monday
   const pad = (n) => String(n).padStart(2, "0");
   const addDays = (dateStr, n) => {
@@ -1400,15 +1467,25 @@ function Utilization({ trainers, classes, commissions }) {
   });
 
   const maxCount = Math.max(1, ...heat.flatMap((h) => h.counts));
-  const avgUtilization = commissions.length
-    ? Math.round((commissions.reduce((s, c) => s + Math.min(1, c.progress), 0) / commissions.length) * 100)
-    : 0;
-  const totalCompleted = classes.filter((c) => c.status === "completed").length;
-  const totalUpcoming = classes.filter((c) => c.status === "scheduled").length;
 
   return (
     <div>
-      <SectionTitle eyebrow="Capacity" title="Trainer utilisation" />
+      <SectionTitle
+        eyebrow="Capacity"
+        title="Trainer utilisation"
+        action={
+          <PeriodSelector
+            mode={mode}
+            setMode={setMode}
+            month={month}
+            setMonth={setMonth}
+            startDate={startDate}
+            setStartDate={setStartDate}
+            endDate={endDate}
+            setEndDate={setEndDate}
+          />
+        }
+      />
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
         <Card className="p-4">
           <div className="text-[11px] uppercase tracking-wide text-green-600">Studio avg. utilisation</div>
@@ -1424,13 +1501,14 @@ function Utilization({ trainers, classes, commissions }) {
         </Card>
       </div>
 
+      <SectionTitle eyebrow="Payroll" title="Commission — selected period" />
       <div className="space-y-4 mb-8">
         {commissions.map((c) => (
           <Card key={c.trainer.id} className="p-5">
             <div className="flex items-center justify-between mb-2">
               <div className="font-medium text-green-900">{c.trainer.name}</div>
               <span className="text-sm text-green-700">
-                {c.completed} / {c.trainer.monthlyTarget} classes · {Math.round(c.progress * 100)}%
+                {c.completed} / {c.trainer.monthlyTarget} classes · {Math.round(c.progress * 100)}% · {AED(c.commissionEarned)}
               </span>
             </div>
             <div className="h-2 rounded-full bg-green-100 overflow-hidden">
@@ -1501,10 +1579,43 @@ function Utilization({ trainers, classes, commissions }) {
   );
 }
 
-function CommissionTab({ commissions }) {
+function CommissionTab({ trainers, classes, customers, packages }) {
+  const [mode, setMode] = useState("month");
+  const [month, setMonth] = useState("2026-08");
+  const [startDate, setStartDate] = useState("2026-08-01");
+  const [endDate, setEndDate] = useState("2026-08-31");
+  const inPeriod = (dateStr) => (mode === "month" ? dateStr.startsWith(month) : dateStr >= startDate && dateStr <= endDate);
+  const periodClasses = classes.filter((c) => inPeriod(c.date));
+
+  const commissions = trainers.map((t) => {
+    const completed = periodClasses.filter((c) => c.trainerId === t.id && c.status === "completed").length;
+    const commissionEarned = trainerCommission(t, periodClasses, customers, packages);
+    return {
+      trainer: t,
+      completed,
+      commissionEarned,
+      total: t.baseSalary + commissionEarned,
+    };
+  });
+
   return (
     <div>
-      <SectionTitle eyebrow="Payroll engine" title="Commission — this cycle" />
+      <SectionTitle
+        eyebrow="Payroll engine"
+        title="Commission — selected period"
+        action={
+          <PeriodSelector
+            mode={mode}
+            setMode={setMode}
+            month={month}
+            setMonth={setMonth}
+            startDate={startDate}
+            setStartDate={setStartDate}
+            endDate={endDate}
+            setEndDate={setEndDate}
+          />
+        }
+      />
       <div className="grid md:grid-cols-2 gap-4 mb-8">
         {commissions.map((c) => (
           <Card key={c.trainer.id} className="p-5">
@@ -1667,22 +1778,6 @@ export default function App() {
   const [classes, setClasses] = useSyncedTable("classes", seedClasses, signedIn);
   const [payments, setPayments] = useSyncedTable("payments", seedPayments, signedIn);
 
-  const commissions = useMemo(
-    () =>
-      trainers.map((t) => {
-        const completed = classes.filter((c) => c.trainerId === t.id && c.status === "completed").length;
-        const commissionEarned = trainerCommission(t, classes, customers, packages);
-        return {
-          trainer: t,
-          completed,
-          commissionEarned,
-          total: t.baseSalary + commissionEarned,
-          progress: t.monthlyTarget ? completed / t.monthlyTarget : 0,
-        };
-      }),
-    [trainers, classes, customers, packages]
-  );
-
   if (session === undefined) {
     return <div className="min-h-screen bg-white flex items-center justify-center text-green-600 text-sm">Loading…</div>;
   }
@@ -1719,8 +1814,8 @@ export default function App() {
           {tab === "packages" && <Packages packages={packages} setPackages={setPackages} />}
           {tab === "trainers" && <Trainers trainers={trainers} setTrainers={setTrainers} />}
           {tab === "schedule" && <Schedule classes={classes} setClasses={setClasses} trainers={trainers} customers={customers} packages={packages} />}
-          {tab === "utilization" && <Utilization trainers={trainers} classes={classes} commissions={commissions} />}
-          {tab === "commission" && <CommissionTab commissions={commissions} />}
+          {tab === "utilization" && <Utilization trainers={trainers} classes={classes} customers={customers} packages={packages} />}
+          {tab === "commission" && <CommissionTab trainers={trainers} classes={classes} customers={customers} packages={packages} />}
         </div>
       </div>
     </div>
