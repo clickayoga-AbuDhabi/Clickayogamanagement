@@ -214,9 +214,9 @@ function SectionTitle({ eyebrow, title, action }) {
 
 function Modal({ title, onClose, children }) {
   return (
-    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-md p-6">
-        <div className="flex items-center justify-between mb-4">
+    <div className="fixed inset-0 bg-black/30 flex items-start justify-center z-50 p-4 overflow-y-auto">
+      <Card className="w-full max-w-md p-6 my-8" style={{ maxHeight: "calc(100vh - 4rem)", overflowY: "auto" }}>
+        <div className="flex items-center justify-between mb-4 sticky top-0 bg-white pt-1 -mt-1">
           <h3 className="font-serif text-lg text-green-900">{title}</h3>
           <button onClick={onClose} className="text-green-600 hover:text-green-900">
             <X size={18} />
@@ -405,16 +405,20 @@ function Dashboard({ trainers, customers, classes, payments, packages }) {
   );
 }
 
-function Customers({ customers, setCustomers, packages, payments, setPayments }) {
+function Customers({ customers, setCustomers, packages, setPackages, payments, setPayments }) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [source, setSource] = useState("new"); // "new" or "existing" — only relevant while adding
   const [existingPersonKey, setExistingPersonKey] = useState("");
-  const blankForm = { name: "", phone: "", email: "", location: "", packageId: packages[0]?.id, classesRemaining: packages[0]?.classes ?? "—", discount: 0 };
+  const blankCustom = { name: "", price: 500, classes: 10, unlimited: false, type: "private" };
+  const blankForm = { name: "", phone: "", email: "", location: "", packageId: packages[0]?.id, classesRemaining: packages[0]?.classes ?? "—", discount: 0, custom: blankCustom };
   const [form, setForm] = useState(blankForm);
 
   const packageName = (id) => packages.find((p) => p.id === id)?.name || "—";
-  const selectedPackage = packages.find((p) => p.id === form.packageId);
+  const selectedPackage =
+    form.packageId === "other"
+      ? { name: form.custom.name || "Custom package", price: Number(form.custom.price) || 0, classes: form.custom.unlimited ? null : Number(form.custom.classes) || 0, type: form.custom.type }
+      : packages.find((p) => p.id === form.packageId);
   const grossForForm = selectedPackage?.price || 0;
   const finalForForm = Math.max(0, grossForForm - (Number(form.discount) || 0));
 
@@ -425,8 +429,18 @@ function Customers({ customers, setCustomers, packages, payments, setPayments })
   const uniquePeople = Object.values(people).sort((a, b) => a.name.localeCompare(b.name));
 
   const pickPackage = (id) => {
+    if (id === "other") {
+      setForm({ ...form, packageId: "other", classesRemaining: form.custom.unlimited ? "—" : Number(form.custom.classes) || 0 });
+      return;
+    }
     const pkg = packages.find((p) => p.id === id);
     setForm({ ...form, packageId: id, classesRemaining: pkg?.classes ?? "—" });
+  };
+
+  const setCustom = (patch) => {
+    const custom = { ...form.custom, ...patch };
+    const classesRemaining = custom.unlimited ? "—" : Number(custom.classes) || 0;
+    setForm({ ...form, custom, classesRemaining });
   };
 
   const pickExistingPerson = (name) => {
@@ -457,6 +471,7 @@ function Customers({ customers, setCustomers, packages, payments, setPayments })
       packageId: c.packageId,
       classesRemaining: c.classesRemaining,
       discount: existingPayment?.discount || 0,
+      custom: blankCustom,
     });
     setOpen(true);
   };
@@ -467,17 +482,32 @@ function Customers({ customers, setCustomers, packages, payments, setPayments })
     setEditingId(null);
     setSource("existing");
     setExistingPersonKey(c.name);
-    setForm({ name: c.name, phone: c.phone, email: c.email || "", location: c.location || "", packageId: packages[0]?.id, classesRemaining: packages[0]?.classes ?? "—", discount: 0 });
+    setForm({ name: c.name, phone: c.phone, email: c.email || "", location: c.location || "", packageId: packages[0]?.id, classesRemaining: packages[0]?.classes ?? "—", discount: 0, custom: blankCustom });
     setOpen(true);
   };
 
   // Saving a customer automatically generates (or updates) the matching payment record
   // from the selected package's price, minus whatever discount was entered here — no
-  // separate "log payment" step needed.
+  // separate "log payment" step needed. Choosing "Other" creates a real custom package
+  // first (so it shows up on the Packages tab and gets proper commission treatment),
+  // then uses that for the customer and the payment.
   const submit = () => {
     if (!form.name) return;
-    const { discount, ...customerFields } = form;
-    const pkg = packages.find((p) => p.id === form.packageId);
+    const { discount, custom, ...customerFields } = form;
+
+    let pkg = packages.find((p) => p.id === form.packageId);
+    if (form.packageId === "other") {
+      pkg = {
+        id: uid("pk"),
+        name: custom.name || "Custom package",
+        price: Number(custom.price) || 0,
+        classes: custom.unlimited ? null : Number(custom.classes) || 0,
+        type: custom.type,
+      };
+      setPackages((ps) => [...ps, pkg]);
+    }
+    customerFields.packageId = pkg?.id;
+
     const gross = pkg?.price || 0;
     const discountAmount = Number(discount) || 0;
     const finalAmount = Math.max(0, gross - discountAmount);
@@ -698,8 +728,37 @@ function Customers({ customers, setCustomers, packages, payments, setPayments })
                   {p.name} — {AED(p.price)}{p.classes ? ` (${p.classes} classes)` : ""}
                 </option>
               ))}
+              <option value="other">Other — create a custom package…</option>
             </select>
           </Field>
+          {form.packageId === "other" && (
+            <div className="border border-green-100 rounded-md p-3 mb-3 space-y-3 bg-green-50">
+              <Field label="Custom package name">
+                <input className={inputCls} value={form.custom.name} onChange={(e) => setCustom({ name: e.target.value })} placeholder="e.g. Private Retreat Package" />
+              </Field>
+              <Field label="Class type">
+                <select className={inputCls} value={form.custom.type} onChange={(e) => setCustom({ type: e.target.value })}>
+                  <option value="private">Private (trainer's tiered commission)</option>
+                  <option value="group">Group (flat 10% commission)</option>
+                </select>
+              </Field>
+              <Field label="Class count">
+                <select className={inputCls} value={form.custom.unlimited ? "unlimited" : "fixed"} onChange={(e) => setCustom({ unlimited: e.target.value === "unlimited" })}>
+                  <option value="fixed">Fixed number of classes</option>
+                  <option value="unlimited">Unlimited (monthly)</option>
+                </select>
+              </Field>
+              {!form.custom.unlimited && (
+                <Field label="Number of classes">
+                  <input type="number" className={inputCls} value={form.custom.classes} onChange={(e) => setCustom({ classes: e.target.value })} />
+                </Field>
+              )}
+              <Field label="Price (AED)">
+                <input type="number" className={inputCls} value={form.custom.price} onChange={(e) => setCustom({ price: e.target.value })} />
+              </Field>
+              <p className="text-[11px] text-green-600">This will be saved as a new package on the Packages tab, so it's ready to reuse for other customers.</p>
+            </div>
+          )}
           <Field label="Classes remaining">
             <input
               type={form.classesRemaining === "—" ? "text" : "number"}
@@ -1810,7 +1869,7 @@ export default function App() {
           {tab === "dashboard" && (
             <Dashboard trainers={trainers} customers={customers} classes={classes} payments={payments} packages={packages} />
           )}
-          {tab === "customers" && <Customers customers={customers} setCustomers={setCustomers} packages={packages} payments={payments} setPayments={setPayments} />}
+          {tab === "customers" && <Customers customers={customers} setCustomers={setCustomers} packages={packages} setPackages={setPackages} payments={payments} setPayments={setPayments} />}
           {tab === "packages" && <Packages packages={packages} setPackages={setPackages} />}
           {tab === "trainers" && <Trainers trainers={trainers} setTrainers={setTrainers} />}
           {tab === "schedule" && <Schedule classes={classes} setClasses={setClasses} trainers={trainers} customers={customers} packages={packages} />}
