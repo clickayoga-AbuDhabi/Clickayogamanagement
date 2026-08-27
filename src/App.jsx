@@ -1142,13 +1142,15 @@ function Schedule({ classes, setClasses, trainers, customers }) {
   const trainerConflict = classes.some(
     (c) => c.id !== editingId && c.trainerId === form.trainerId && c.date === form.date && c.time === form.time
   );
-  // A customer with 0 classes remaining on a fixed-count package can't be booked —
-  // unless this is an edit to their own existing session (not a new consumption).
+  // A customer with 0 classes remaining can't be booked — unless this is an edit to
+  // their own existing session (not a new consumption). classesRemaining can arrive
+  // as either a number (offline demo) or a numeric string (live data, since it's a
+  // text column so it can also hold "—" for unlimited) — Number() handles both.
   const customerOutOfClasses = (() => {
     const customer = customers.find((c) => c.id === form.customerId);
     if (!customer) return false;
-    const remaining = customer.classesRemaining;
-    if (typeof remaining !== "number" || remaining > 0) return false;
+    const remaining = Number(customer.classesRemaining);
+    if (Number.isNaN(remaining) || remaining > 0) return false;
     const original = editingId ? classes.find((c) => c.id === editingId) : null;
     if (original && original.customerId === form.customerId) return false;
     return true;
@@ -1517,7 +1519,7 @@ function Schedule({ classes, setClasses, trainers, customers }) {
             const selectedCustomer = customers.find((c) => c.id === form.customerId);
             if (!selectedCustomer) return null;
             const remaining = selectedCustomer.classesRemaining;
-            const isLow = typeof remaining === "number" && remaining <= 0;
+            const isLow = !Number.isNaN(Number(remaining)) && Number(remaining) <= 0;
             return (
               <>
                 <div className={`flex items-center justify-between text-xs rounded-md px-3 py-2 mb-1 ${isLow ? "bg-red-50 text-red-600" : "bg-green-50 text-green-700"}`}>
