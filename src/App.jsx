@@ -25,6 +25,7 @@ import {
   Download,
   MapPin,
   Search,
+  AlertTriangle,
 } from "lucide-react";
 
 // ---------- Seed data (Click A Yoga, Abu Dhabi) ----------
@@ -44,10 +45,10 @@ const seedPackages = [
 ];
 
 const seedCustomers = [
-  { id: "c1", name: "Fatima Al Marzooqi", phone: "050 123 4567", email: "fatima.marzooqi@gmail.com", location: "Al Reem Island, Abu Dhabi", packageId: "pk5", classesRemaining: "—", joined: "2026-06-02" },
-  { id: "c2", name: "Sara Ibrahim", phone: "052 987 1234", email: "sara.ibrahim@gmail.com", location: "Khalifa City, Abu Dhabi", packageId: "pk3", classesRemaining: 4, joined: "2026-07-10" },
-  { id: "c3", name: "Layla Haddad", phone: "056 445 8890", email: "layla.haddad@gmail.com", location: "Corniche, Abu Dhabi", packageId: "pk1", classesRemaining: 0, joined: "2026-08-01" },
-  { id: "c4", name: "Noor Al Hashimi", phone: "054 221 7765", email: "noor.alhashimi@gmail.com", location: "Yas Island, Abu Dhabi", packageId: "pk3", classesRemaining: 7, joined: "2026-07-22" },
+  { id: "c1", name: "Fatima Al Marzooqi", phone: "050 123 4567", email: "fatima.marzooqi@gmail.com", location: "Al Reem Island, Abu Dhabi", classType: "private", unlimited: true, numberOfClasses: null, perClassPrice: 45, classesRemaining: "—", joined: "2026-06-02" },
+  { id: "c2", name: "Sara Ibrahim", phone: "052 987 1234", email: "sara.ibrahim@gmail.com", location: "Khalifa City, Abu Dhabi", classType: "private", unlimited: false, numberOfClasses: 10, perClassPrice: 120, classesRemaining: 4, joined: "2026-07-10" },
+  { id: "c3", name: "Layla Haddad", phone: "056 445 8890", email: "layla.haddad@gmail.com", location: "Corniche, Abu Dhabi", classType: "private", unlimited: false, numberOfClasses: 1, perClassPrice: 150, classesRemaining: 0, joined: "2026-08-01" },
+  { id: "c4", name: "Noor Al Hashimi", phone: "054 221 7765", email: "noor.alhashimi@gmail.com", location: "Yas Island, Abu Dhabi", classType: "group", unlimited: false, numberOfClasses: 10, perClassPrice: 62.5, classesRemaining: 7, joined: "2026-07-22" },
 ];
 
 const seedClasses = [
@@ -62,9 +63,9 @@ const seedClasses = [
 ];
 
 const seedPayments = [
-  { id: "p1", customerId: "c1", grossAmount: 900, discount: 0, amount: 900, date: "2026-08-01", note: "Monthly Unlimited" },
-  { id: "p2", customerId: "c2", grossAmount: 1200, discount: 100, amount: 1100, date: "2026-07-10", note: "10-Class Pack" },
-  { id: "p3", customerId: "c4", grossAmount: 1200, discount: 0, amount: 1200, date: "2026-07-22", note: "10-Class Pack" },
+  { id: "p1", customerId: "c1", date: "2026-08-01", note: "Unlimited monthly × AED45/class (private)", subtotal: 900, taxCharged: false, taxPercent: 0, taxAmount: 0, grandTotal: 900, paymentMethod: "online", amountPaid: 900, pendingAmount: 0 },
+  { id: "p2", customerId: "c2", date: "2026-07-10", note: "10 classes × AED120 (private)", subtotal: 1200, taxCharged: true, taxPercent: 5, taxAmount: 60, grandTotal: 1260, paymentMethod: "cash", amountPaid: 1160, pendingAmount: 100 },
+  { id: "p3", customerId: "c4", date: "2026-07-22", note: "10 classes × AED62.5 (group)", subtotal: 625, taxCharged: false, taxPercent: 0, taxAmount: 0, grandTotal: 625, paymentMethod: "online", amountPaid: 625, pendingAmount: 0 },
 ];
 
 const uid = (p) => `${p}${Math.random().toString(36).slice(2, 8)}`;
@@ -90,27 +91,24 @@ const downloadCSV = (filename, headers, rows) => {
   URL.revokeObjectURL(url);
 };
 
-// Unlimited packages don't have a per-class count, so a per-class price is estimated
-// against this many classes/month for commission purposes.
+// Unlimited (monthly) bookings don't have a per-class count, so a per-class price is
+// estimated against this many classes/month for commission purposes.
 const UNLIMITED_ASSUMED_CLASSES = 20;
 
-// Group-class packages pay a flat commission regardless of monthly volume tier.
+// Group classes pay a flat commission regardless of monthly volume tier.
 const GROUP_CLASS_COMMISSION_RATE = 0.1;
 
-// The per-class price a given scheduled class is worth, based on the package the
-// customer for that class is on — not a flat rate per trainer.
-const classPrice = (cls, customers, packages) => {
+// The per-class price a given scheduled class is worth, taken directly from the
+// customer's own per-class price (entered when they were booked in) — not a flat
+// rate per trainer, and not looked up from any shared package.
+const classPrice = (cls, customers) => {
   const customer = customers.find((c) => c.id === cls.customerId);
-  const pkg = customer ? packages.find((p) => p.id === customer.packageId) : null;
-  if (!pkg) return 0;
-  return pkg.classes ? pkg.price / pkg.classes : pkg.price / UNLIMITED_ASSUMED_CLASSES;
+  return customer ? Number(customer.perClassPrice) || 0 : 0;
 };
 
-// The package a class's customer is on, if any — used to check for group-class pricing.
-const classPackage = (cls, customers, packages) => {
-  const customer = customers.find((c) => c.id === cls.customerId);
-  return customer ? packages.find((p) => p.id === customer.packageId) : null;
-};
+// The class type (private/group) for a class's customer — drives which commission
+// rule applies.
+const classType = (cls, customers) => customers.find((c) => c.id === cls.customerId)?.classType || "private";
 
 // Commission rate scales with how many classes a trainer completes in a given
 // calendar month: 50 and below uses the trainer's own base rate (default 20%),
@@ -124,9 +122,9 @@ const commissionTierRate = (completedInMonth, baseRate) => {
 
 // Sums a trainer's commission across a set of classes. Classes are grouped by
 // calendar month so the volume tier is evaluated per month (not across the
-// whole date range); each class then pays out at the flat group rate if it's
-// on a group-class package, or the month's volume-tier rate otherwise.
-const trainerCommission = (trainer, classList, customers, packages) => {
+// whole date range); each class then pays out at the flat group rate if its
+// customer is on a group booking, or the month's volume-tier rate otherwise.
+const trainerCommission = (trainer, classList, customers) => {
   const completed = classList.filter((c) => c.trainerId === trainer.id && c.status === "completed");
   const byMonth = {};
   completed.forEach((c) => {
@@ -138,9 +136,8 @@ const trainerCommission = (trainer, classList, customers, packages) => {
     return (
       total +
       monthClasses.reduce((s, c) => {
-        const pkg = classPackage(c, customers, packages);
-        const rate = pkg?.type === "group" ? GROUP_CLASS_COMMISSION_RATE : tierRate;
-        return s + classPrice(c, customers, packages) * rate;
+        const rate = classType(c, customers) === "group" ? GROUP_CLASS_COMMISSION_RATE : tierRate;
+        return s + classPrice(c, customers) * rate;
       }, 0)
     );
   }, 0);
@@ -295,7 +292,7 @@ function PeriodSelector({ mode, setMode, month, setMonth, startDate, setStartDat
   );
 }
 
-function Dashboard({ trainers, customers, classes, payments, packages }) {
+function Dashboard({ trainers, customers, classes, payments }) {
   const [mode, setMode] = useState("month");
   const [month, setMonth] = useState("2026-08");
   const [startDate, setStartDate] = useState("2026-08-01");
@@ -308,19 +305,19 @@ function Dashboard({ trainers, customers, classes, payments, packages }) {
 
   const completedThisCycle = periodClasses.filter((c) => c.status === "completed").length;
   const scheduled = periodClasses.filter((c) => c.status === "scheduled").length;
-  const revenue = periodPayments.reduce((s, p) => s + p.amount, 0);
+  const revenue = periodPayments.reduce((s, p) => s + (p.amountPaid || 0), 0);
 
   // Fee breakdown by package/note, for the selected period
   const feeMap = {};
   periodPayments.forEach((p) => {
     const key = p.note?.trim() || "Other";
-    feeMap[key] = (feeMap[key] || 0) + p.amount;
+    feeMap[key] = (feeMap[key] || 0) + (p.amountPaid || 0);
   });
   const feeBreakdown = Object.entries(feeMap).sort((a, b) => b[1] - a[1]);
 
   const commissions = trainers.map((t) => {
     const completed = periodClasses.filter((c) => c.trainerId === t.id && c.status === "completed").length;
-    const commissionEarned = trainerCommission(t, periodClasses, customers, packages);
+    const commissionEarned = trainerCommission(t, periodClasses, customers);
     return {
       trainer: t,
       completed,
@@ -405,43 +402,38 @@ function Dashboard({ trainers, customers, classes, payments, packages }) {
   );
 }
 
-function Customers({ customers, setCustomers, packages, setPackages, payments, setPayments }) {
+function Customers({ customers, setCustomers, payments, setPayments }) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [source, setSource] = useState("new"); // "new" or "existing" — only relevant while adding
   const [existingPersonKey, setExistingPersonKey] = useState("");
-  const blankCustom = { name: "", price: 500, classes: 10, unlimited: false, type: "private" };
-  const blankForm = { name: "", phone: "", email: "", location: "", packageId: packages[0]?.id, classesRemaining: packages[0]?.classes ?? "—", discount: 0, custom: blankCustom };
+  const blankForm = {
+    name: "", phone: "", email: "", location: "",
+    classType: "private",
+    unlimited: false,
+    numberOfClasses: 10,
+    priceInput: 150,
+    classesRemaining: 10,
+    taxCharged: false,
+    taxPercent: 5,
+    paymentMethod: "cash",
+    amountPaid: "",
+  };
   const [form, setForm] = useState(blankForm);
 
-  const packageName = (id) => packages.find((p) => p.id === id)?.name || "—";
-  const selectedPackage =
-    form.packageId === "other"
-      ? { name: form.custom.name || "Custom package", price: Number(form.custom.price) || 0, classes: form.custom.unlimited ? null : Number(form.custom.classes) || 0, type: form.custom.type }
-      : packages.find((p) => p.id === form.packageId);
-  const grossForForm = selectedPackage?.price || 0;
-  const finalForForm = Math.max(0, grossForForm - (Number(form.discount) || 0));
+  // ----- Live totals for the form -----
+  const subtotal = form.unlimited
+    ? Number(form.priceInput) || 0
+    : (Number(form.numberOfClasses) || 0) * (Number(form.priceInput) || 0);
+  const taxAmount = form.taxCharged ? subtotal * ((Number(form.taxPercent) || 0) / 100) : 0;
+  const grandTotal = subtotal + taxAmount;
+  const pendingAmount = Math.max(0, grandTotal - (Number(form.amountPaid) || 0));
 
   // One entry per distinct person (by name), using their most recent contact details —
-  // powers the "existing customer" picker so a renewal doesn't need retyping.
+  // powers the "existing customer" picker so a repeat booking doesn't need retyping.
   const people = {};
   customers.forEach((c) => { people[c.name] = c; });
   const uniquePeople = Object.values(people).sort((a, b) => a.name.localeCompare(b.name));
-
-  const pickPackage = (id) => {
-    if (id === "other") {
-      setForm({ ...form, packageId: "other", classesRemaining: form.custom.unlimited ? "—" : Number(form.custom.classes) || 0 });
-      return;
-    }
-    const pkg = packages.find((p) => p.id === id);
-    setForm({ ...form, packageId: id, classesRemaining: pkg?.classes ?? "—" });
-  };
-
-  const setCustom = (patch) => {
-    const custom = { ...form.custom, ...patch };
-    const classesRemaining = custom.unlimited ? "—" : Number(custom.classes) || 0;
-    setForm({ ...form, custom, classesRemaining });
-  };
 
   const pickExistingPerson = (name) => {
     setExistingPersonKey(name);
@@ -459,7 +451,7 @@ function Customers({ customers, setCustomers, packages, setPackages, payments, s
   };
 
   // Edits this exact line item in place — corrects a mistake, doesn't create a new row.
-  // Pulls the discount from that row's existing payment, if one was already generated.
+  // Pulls pricing/payment details from that row's existing payment record, if one exists.
   const startEdit = (c) => {
     setEditingId(c.id);
     const existingPayment = payments.find((p) => p.customerId === c.id);
@@ -468,70 +460,81 @@ function Customers({ customers, setCustomers, packages, setPackages, payments, s
       phone: c.phone,
       email: c.email || "",
       location: c.location || "",
-      packageId: c.packageId,
+      classType: c.classType || "private",
+      unlimited: !!c.unlimited,
+      numberOfClasses: c.numberOfClasses ?? 10,
+      priceInput: c.unlimited ? Math.round((Number(c.perClassPrice) || 0) * UNLIMITED_ASSUMED_CLASSES) : Number(c.perClassPrice) || 0,
       classesRemaining: c.classesRemaining,
-      discount: existingPayment?.discount || 0,
-      custom: blankCustom,
+      taxCharged: existingPayment?.taxCharged || false,
+      taxPercent: existingPayment?.taxPercent || 5,
+      paymentMethod: existingPayment?.paymentMethod || "cash",
+      amountPaid: existingPayment?.amountPaid ?? "",
     });
     setOpen(true);
   };
 
   // Pre-fills contact details from an existing customer but always saves as a brand-new
-  // line item — for when the same person takes another package.
-  const startNewPackage = (c) => {
+  // line item — for when the same person books another set of classes.
+  const startNewBooking = (c) => {
     setEditingId(null);
     setSource("existing");
     setExistingPersonKey(c.name);
-    setForm({ name: c.name, phone: c.phone, email: c.email || "", location: c.location || "", packageId: packages[0]?.id, classesRemaining: packages[0]?.classes ?? "—", discount: 0, custom: blankCustom });
+    setForm({ ...blankForm, name: c.name, phone: c.phone, email: c.email || "", location: c.location || "" });
     setOpen(true);
   };
 
+  const setClassesFor = (numberOfClasses) => {
+    setForm({ ...form, numberOfClasses, classesRemaining: Number(numberOfClasses) || 0 });
+  };
+
+  const markPaidInFull = () => setForm({ ...form, amountPaid: grandTotal });
+
   // Saving a customer automatically generates (or updates) the matching payment record
-  // from the selected package's price, minus whatever discount was entered here — no
-  // separate "log payment" step needed. Choosing "Other" creates a real custom package
-  // first (so it shows up on the Packages tab and gets proper commission treatment),
-  // then uses that for the customer and the payment.
+  // from the classes/price/tax entered here — no separate "log payment" step needed.
   const submit = () => {
     if (!form.name) return;
-    const { discount, custom, ...customerFields } = form;
+    const storedPerClassPrice = form.unlimited ? (Number(form.priceInput) || 0) / UNLIMITED_ASSUMED_CLASSES : Number(form.priceInput) || 0;
+    const customerFields = {
+      name: form.name,
+      phone: form.phone,
+      email: form.email,
+      location: form.location,
+      classType: form.classType,
+      unlimited: form.unlimited,
+      numberOfClasses: form.unlimited ? null : Number(form.numberOfClasses) || 0,
+      perClassPrice: storedPerClassPrice,
+      classesRemaining: form.unlimited ? "—" : Number(form.classesRemaining) || 0,
+    };
 
-    let pkg = packages.find((p) => p.id === form.packageId);
-    if (form.packageId === "other") {
-      pkg = {
-        id: uid("pk"),
-        name: custom.name || "Custom package",
-        price: Number(custom.price) || 0,
-        classes: custom.unlimited ? null : Number(custom.classes) || 0,
-        type: custom.type,
-      };
-      setPackages((ps) => [...ps, pkg]);
-    }
-    customerFields.packageId = pkg?.id;
-
-    const gross = pkg?.price || 0;
-    const discountAmount = Number(discount) || 0;
-    const finalAmount = Math.max(0, gross - discountAmount);
+    const classesLabel = form.unlimited ? "Unlimited monthly" : `${Number(form.numberOfClasses) || 0} classes`;
+    const priceLabel = `${AED(Number(form.priceInput) || 0)}${form.unlimited ? "/mo" : ""}`;
+    const note = `${classesLabel} × ${priceLabel} (${form.classType})`;
+    const taxPercent = form.taxCharged ? Number(form.taxPercent) || 0 : 0;
+    const paymentFields = {
+      note,
+      subtotal,
+      taxCharged: form.taxCharged,
+      taxPercent,
+      taxAmount,
+      grandTotal,
+      paymentMethod: form.paymentMethod,
+      amountPaid: Number(form.amountPaid) || 0,
+      pendingAmount,
+    };
 
     if (editingId) {
       setCustomers((cs) => cs.map((c) => (c.id === editingId ? { ...c, ...customerFields } : c)));
       setPayments((ps) => {
         const exists = ps.some((p) => p.customerId === editingId);
         if (exists) {
-          return ps.map((p) =>
-            p.customerId === editingId
-              ? { ...p, note: pkg?.name || p.note, grossAmount: gross, discount: discountAmount, amount: finalAmount }
-              : p
-          );
+          return ps.map((p) => (p.customerId === editingId ? { ...p, ...paymentFields } : p));
         }
-        return [...ps, { id: uid("p"), date: new Date().toISOString().slice(0, 10), customerId: editingId, note: pkg?.name || "", grossAmount: gross, discount: discountAmount, amount: finalAmount }];
+        return [...ps, { id: uid("p"), date: new Date().toISOString().slice(0, 10), customerId: editingId, ...paymentFields }];
       });
     } else {
       const newId = uid("c");
       setCustomers((cs) => [...cs, { id: newId, joined: new Date().toISOString().slice(0, 10), ...customerFields }]);
-      setPayments((ps) => [
-        ...ps,
-        { id: uid("p"), date: new Date().toISOString().slice(0, 10), customerId: newId, note: pkg?.name || "", grossAmount: gross, discount: discountAmount, amount: finalAmount },
-      ]);
+      setPayments((ps) => [...ps, { id: uid("p"), date: new Date().toISOString().slice(0, 10), customerId: newId, ...paymentFields }]);
     }
     setForm(blankForm);
     setOpen(false);
@@ -556,8 +559,18 @@ function Customers({ customers, setCustomers, packages, setPackages, payments, s
   const exportCustomersCSV = () => {
     downloadCSV(
       `click-a-yoga-customers-${new Date().toISOString().slice(0, 10)}.csv`,
-      ["Name", "Phone", "Email", "Location", "Package", "Classes Remaining", "Joined"],
-      sorted.map((c) => [c.name, c.phone, c.email || "", c.location || "", packageName(c.packageId), c.classesRemaining, c.joined])
+      ["Name", "Phone", "Email", "Location", "Class Type", "Classes", "Per-Class Price", "Classes Remaining", "Joined"],
+      sorted.map((c) => [
+        c.name,
+        c.phone,
+        c.email || "",
+        c.location || "",
+        c.classType === "group" ? "Group" : "Private",
+        c.unlimited ? "Unlimited" : c.numberOfClasses,
+        AED(c.perClassPrice || 0),
+        c.classesRemaining,
+        c.joined,
+      ])
     );
   };
 
@@ -568,8 +581,19 @@ function Customers({ customers, setCustomers, packages, setPackages, payments, s
   const exportPaymentsCSV = () => {
     downloadCSV(
       `click-a-yoga-payments-${new Date().toISOString().slice(0, 10)}.csv`,
-      ["Customer", "Package/Note", "Gross Amount", "Discount", "Amount Collected", "Date"],
-      sortedPayments.map((p) => [nameOf(p.customerId), p.note, p.grossAmount ?? p.amount, p.discount || 0, p.amount, p.date])
+      ["Customer", "Note", "Payment Method", "Subtotal", "Tax %", "Tax Amount", "Grand Total", "Amount Paid", "Pending", "Date"],
+      sortedPayments.map((p) => [
+        nameOf(p.customerId),
+        p.note,
+        p.paymentMethod === "online" ? "Online" : "Cash",
+        p.subtotal,
+        p.taxCharged ? p.taxPercent : 0,
+        p.taxAmount || 0,
+        p.grandTotal,
+        p.amountPaid,
+        p.pendingAmount || 0,
+        p.date,
+      ])
     );
   };
 
@@ -617,7 +641,7 @@ function Customers({ customers, setCustomers, packages, setPackages, payments, s
               <th className="text-left px-4 py-3">Phone</th>
               <th className="text-left px-4 py-3">Email</th>
               <th className="text-left px-4 py-3">Location</th>
-              <th className="text-left px-4 py-3">Package</th>
+              <th className="text-left px-4 py-3">Type</th>
               <th className="text-left px-4 py-3">Remaining</th>
               <th className="text-left px-4 py-3">Joined</th>
               <th className="text-left px-4 py-3"></th>
@@ -630,12 +654,12 @@ function Customers({ customers, setCustomers, packages, setPackages, payments, s
                 <td className="px-4 py-3 text-green-700 whitespace-nowrap"><span className="flex items-center gap-1"><Phone size={12} />{c.phone}</span></td>
                 <td className="px-4 py-3 text-green-700 whitespace-nowrap">{c.email || "—"}</td>
                 <td className="px-4 py-3 text-green-700 whitespace-nowrap">{c.location || "—"}</td>
-                <td className="px-4 py-3 text-green-700 whitespace-nowrap">{packageName(c.packageId)}</td>
+                <td className="px-4 py-3 text-green-700 whitespace-nowrap">{c.classType === "group" ? "Group" : "Private"}</td>
                 <td className="px-4 py-3 text-green-700">{c.classesRemaining}</td>
                 <td className="px-4 py-3 text-green-700 whitespace-nowrap">{c.joined}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <button onClick={() => startNewPackage(c)} className="text-green-500 hover:text-green-700" title="New package for this customer">
+                    <button onClick={() => startNewBooking(c)} className="text-green-500 hover:text-green-700" title="New booking for this customer">
                       <RefreshCw size={15} />
                     </button>
                     <button onClick={() => startEdit(c)} className="text-green-600 hover:text-green-900" title="Edit this line item">
@@ -721,59 +745,85 @@ function Customers({ customers, setCustomers, packages, setPackages, payments, s
               placeholder="e.g. Al Reem Island, Abu Dhabi"
             />
           </Field>
-          <Field label="Package">
-            <select className={inputCls} value={form.packageId} onChange={(e) => pickPackage(e.target.value)}>
-              {packages.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} — {AED(p.price)}{p.classes ? ` (${p.classes} classes)` : ""}
-                </option>
-              ))}
-              <option value="other">Other — create a custom package…</option>
+
+          <Field label="Class type">
+            <select className={inputCls} value={form.classType} onChange={(e) => setForm({ ...form, classType: e.target.value })}>
+              <option value="private">Private (trainer's tiered commission)</option>
+              <option value="group">Group (flat 10% commission)</option>
             </select>
           </Field>
-          {form.packageId === "other" && (
-            <div className="border border-green-100 rounded-md p-3 mb-3 space-y-3 bg-green-50">
-              <Field label="Custom package name">
-                <input className={inputCls} value={form.custom.name} onChange={(e) => setCustom({ name: e.target.value })} placeholder="e.g. Private Retreat Package" />
-              </Field>
-              <Field label="Class type">
-                <select className={inputCls} value={form.custom.type} onChange={(e) => setCustom({ type: e.target.value })}>
-                  <option value="private">Private (trainer's tiered commission)</option>
-                  <option value="group">Group (flat 10% commission)</option>
-                </select>
-              </Field>
-              <Field label="Class count">
-                <select className={inputCls} value={form.custom.unlimited ? "unlimited" : "fixed"} onChange={(e) => setCustom({ unlimited: e.target.value === "unlimited" })}>
-                  <option value="fixed">Fixed number of classes</option>
-                  <option value="unlimited">Unlimited (monthly)</option>
-                </select>
-              </Field>
-              {!form.custom.unlimited && (
-                <Field label="Number of classes">
-                  <input type="number" className={inputCls} value={form.custom.classes} onChange={(e) => setCustom({ classes: e.target.value })} />
-                </Field>
-              )}
-              <Field label="Price (AED)">
-                <input type="number" className={inputCls} value={form.custom.price} onChange={(e) => setCustom({ price: e.target.value })} />
-              </Field>
-              <p className="text-[11px] text-green-600">This will be saved as a new package on the Packages tab, so it's ready to reuse for other customers.</p>
-            </div>
-          )}
-          <Field label="Classes remaining">
-            <input
-              type={form.classesRemaining === "—" ? "text" : "number"}
+          <Field label="Class count">
+            <select
               className={inputCls}
-              value={form.classesRemaining}
-              onChange={(e) => setForm({ ...form, classesRemaining: e.target.value === "—" ? e.target.value : Number(e.target.value) })}
-            />
+              value={form.unlimited ? "unlimited" : "fixed"}
+              onChange={(e) => setForm({ ...form, unlimited: e.target.value === "unlimited", classesRemaining: e.target.value === "unlimited" ? "—" : Number(form.numberOfClasses) || 0 })}
+            >
+              <option value="fixed">Fixed number of classes</option>
+              <option value="unlimited">Unlimited (monthly)</option>
+            </select>
           </Field>
-          <Field label="Discount (AED, optional)">
-            <input type="number" className={inputCls} value={form.discount} onChange={(e) => setForm({ ...form, discount: e.target.value })} />
+          {!form.unlimited && (
+            <Field label="Number of classes">
+              <input type="number" className={inputCls} value={form.numberOfClasses} onChange={(e) => setClassesFor(e.target.value)} />
+            </Field>
+          )}
+          <Field label={form.unlimited ? "Price per month (AED)" : "Price per class (AED)"}>
+            <input type="number" className={inputCls} value={form.priceInput} onChange={(e) => setForm({ ...form, priceInput: e.target.value })} />
           </Field>
+          {!form.unlimited && (
+            <Field label="Classes remaining">
+              <input
+                type="number"
+                className={inputCls}
+                value={form.classesRemaining}
+                onChange={(e) => setForm({ ...form, classesRemaining: Number(e.target.value) })}
+              />
+            </Field>
+          )}
+
           <div className="flex items-center justify-between text-sm bg-green-50 text-green-700 rounded-md px-3 py-2 mb-3">
-            <span>Amount to collect ({selectedPackage?.name || "package"})</span>
-            <span className="font-medium text-green-900">{AED(finalForForm)}</span>
+            <span>Subtotal</span>
+            <span className="font-medium text-green-900">{AED(subtotal)}</span>
           </div>
+
+          <Field label="Tax charged?">
+            <select className={inputCls} value={form.taxCharged ? "yes" : "no"} onChange={(e) => setForm({ ...form, taxCharged: e.target.value === "yes" })}>
+              <option value="no">No</option>
+              <option value="yes">Yes</option>
+            </select>
+          </Field>
+          {form.taxCharged && (
+            <Field label="Tax percentage (%)">
+              <input type="number" className={inputCls} value={form.taxPercent} onChange={(e) => setForm({ ...form, taxPercent: e.target.value })} />
+            </Field>
+          )}
+
+          <div className="flex items-center justify-between text-sm bg-green-50 text-green-700 rounded-md px-3 py-2 mb-3">
+            <span>Grand total{form.taxCharged ? ` (incl. ${form.taxPercent}% tax)` : ""}</span>
+            <span className="font-serif text-lg text-green-900">{AED(grandTotal)}</span>
+          </div>
+
+          <Field label="Payment method">
+            <select className={inputCls} value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}>
+              <option value="cash">Cash</option>
+              <option value="online">Online</option>
+            </select>
+          </Field>
+          <div className="mb-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="block text-xs text-green-700">Amount received now (AED)</span>
+              <button type="button" onClick={markPaidInFull} className="text-green-600 hover:text-green-900 underline text-[11px]">
+                Mark paid in full
+              </button>
+            </div>
+            <input type="number" className={inputCls} value={form.amountPaid} onChange={(e) => setForm({ ...form, amountPaid: e.target.value })} />
+          </div>
+
+          <div className={`flex items-center justify-between text-sm rounded-md px-3 py-2 mb-3 ${pendingAmount > 0 ? "bg-red-50 text-red-600" : "bg-green-50 text-green-700"}`}>
+            <span>Pending amount</span>
+            <span className="font-medium">{AED(pendingAmount)}</span>
+          </div>
+
           <button onClick={submit} className="w-full bg-green-500 text-white rounded-md py-2 text-sm mt-2 hover:bg-green-600">
             {editingId ? "Save changes" : "Save customer"}
           </button>
@@ -796,13 +846,15 @@ function Customers({ customers, setCustomers, packages, setPackages, payments, s
         />
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[640px]">
+          <table className="w-full text-sm min-w-[860px]">
             <thead className="bg-green-50 text-green-700 text-xs uppercase tracking-wide">
               <tr>
                 <th className="text-left px-4 py-3">Customer</th>
-                <th className="text-left px-4 py-3">Package/Note</th>
-                <th className="text-left px-4 py-3">Discount</th>
-                <th className="text-left px-4 py-3">Amount collected</th>
+                <th className="text-left px-4 py-3">Note</th>
+                <th className="text-left px-4 py-3">Method</th>
+                <th className="text-left px-4 py-3">Total</th>
+                <th className="text-left px-4 py-3">Paid</th>
+                <th className="text-left px-4 py-3">Pending</th>
                 <th className="text-left px-4 py-3">Date</th>
                 <th className="text-left px-4 py-3"></th>
               </tr>
@@ -812,8 +864,10 @@ function Customers({ customers, setCustomers, packages, setPackages, payments, s
                 <tr key={p.id} className="border-t border-gray-100">
                   <td className="px-4 py-3 text-green-900 font-medium whitespace-nowrap">{nameOf(p.customerId)}</td>
                   <td className="px-4 py-3 text-green-700 whitespace-nowrap">{p.note}</td>
-                  <td className="px-4 py-3 text-green-700 whitespace-nowrap">{p.discount ? AED(p.discount) : "—"}</td>
-                  <td className="px-4 py-3 text-green-700 flex items-center gap-1 whitespace-nowrap"><Wallet size={12} />{AED(p.amount)}</td>
+                  <td className="px-4 py-3 text-green-700 whitespace-nowrap">{p.paymentMethod === "online" ? "Online" : "Cash"}</td>
+                  <td className="px-4 py-3 text-green-700 flex items-center gap-1 whitespace-nowrap"><Wallet size={12} />{AED(p.grandTotal)}</td>
+                  <td className="px-4 py-3 text-green-700 whitespace-nowrap">{AED(p.amountPaid)}</td>
+                  <td className={`px-4 py-3 whitespace-nowrap ${p.pendingAmount > 0 ? "text-red-600 font-medium" : "text-green-700"}`}>{AED(p.pendingAmount || 0)}</td>
                   <td className="px-4 py-3 text-green-700 whitespace-nowrap">{p.date}</td>
                   <td className="px-4 py-3">
                     <button onClick={() => removePayment(p.id)} className="text-green-600 hover:text-red-500" title="Delete payment">
@@ -894,7 +948,7 @@ function Trainers({ trainers, setTrainers }) {
               <span>Base commission</span><span className="text-green-900">{Math.round(t.commissionRate * 100)}% (≤50/mo) · 30% (51–99) · 40% (100+)</span>
               <span>Monthly target</span><span className="text-green-900">{t.monthlyTarget} classes</span>
             </div>
-            <div className="text-[11px] text-green-600 mt-2">Group-class packages always pay a flat 10%, regardless of volume.</div>
+            <div className="text-[11px] text-green-600 mt-2">Group classes always pay a flat 10%, regardless of volume.</div>
           </Card>
         ))}
       </div>
@@ -1039,7 +1093,7 @@ function Packages({ packages, setPackages }) {
   );
 }
 
-function Schedule({ classes, setClasses, trainers, customers, packages }) {
+function Schedule({ classes, setClasses, trainers, customers }) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const blankForm = { date: "2026-08-27", time: "07:00", trainerId: trainers[0]?.id, customerId: customers[0]?.id };
@@ -1082,7 +1136,27 @@ function Schedule({ classes, setClasses, trainers, customers, packages }) {
     setOpen(true);
   };
 
+  // ----- Booking guards -----
+  // A trainer can't be double-booked at the same date/time (excluding the session
+  // being edited, so saving an unrelated change to it doesn't flag itself).
+  const trainerConflict = classes.some(
+    (c) => c.id !== editingId && c.trainerId === form.trainerId && c.date === form.date && c.time === form.time
+  );
+  // A customer with 0 classes remaining on a fixed-count package can't be booked —
+  // unless this is an edit to their own existing session (not a new consumption).
+  const customerOutOfClasses = (() => {
+    const customer = customers.find((c) => c.id === form.customerId);
+    if (!customer) return false;
+    const remaining = customer.classesRemaining;
+    if (typeof remaining !== "number" || remaining > 0) return false;
+    const original = editingId ? classes.find((c) => c.id === editingId) : null;
+    if (original && original.customerId === form.customerId) return false;
+    return true;
+  })();
+  const canSubmit = !trainerConflict && !customerOutOfClasses;
+
   const submit = () => {
+    if (!canSubmit) return;
     if (editingId) {
       setClasses((cs) => cs.map((c) => (c.id === editingId ? { ...c, ...form } : c)));
     } else {
@@ -1427,23 +1501,27 @@ function Schedule({ classes, setClasses, trainers, customers, packages }) {
               {trainers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </Field>
+          {trainerConflict && (
+            <div className="flex items-center gap-1 text-xs bg-red-50 text-red-600 rounded-md px-3 py-2 mb-3">
+              <AlertTriangle size={13} /> This trainer already has a session at this date and time.
+            </div>
+          )}
           <Field label="Customer">
             <select className={inputCls} value={form.customerId} onChange={(e) => setForm({ ...form, customerId: e.target.value })}>
               {customers.map((c) => (
-                <option key={c.id} value={c.id}>{c.name} — {packages.find((p) => p.id === c.packageId)?.name || "no package"}</option>
+                <option key={c.id} value={c.id}>{c.name} — {c.classesRemaining === "—" ? "unlimited" : `${c.classesRemaining} left`}</option>
               ))}
             </select>
           </Field>
           {(() => {
             const selectedCustomer = customers.find((c) => c.id === form.customerId);
-            const selectedPackage = selectedCustomer ? packages.find((p) => p.id === selectedCustomer.packageId) : null;
             if (!selectedCustomer) return null;
             const remaining = selectedCustomer.classesRemaining;
             const isLow = typeof remaining === "number" && remaining <= 0;
             return (
               <>
                 <div className={`flex items-center justify-between text-xs rounded-md px-3 py-2 mb-1 ${isLow ? "bg-red-50 text-red-600" : "bg-green-50 text-green-700"}`}>
-                  <span>{selectedPackage ? selectedPackage.name : "No package on file"}</span>
+                  <span>{selectedCustomer.classType === "group" ? "Group class" : "Private class"}</span>
                   <span className="font-medium">
                     {remaining === "—" ? "Unlimited" : isLow ? "0 classes left" : `${remaining} classes left`}
                   </span>
@@ -1453,10 +1531,19 @@ function Schedule({ classes, setClasses, trainers, customers, packages }) {
                     <MapPin size={12} /> {selectedCustomer.location}
                   </div>
                 )}
+                {customerOutOfClasses && (
+                  <div className="flex items-center gap-1 text-xs bg-red-50 text-red-600 rounded-md px-3 py-2 mb-3">
+                    <AlertTriangle size={13} /> This customer has no classes remaining.
+                  </div>
+                )}
               </>
             );
           })()}
-          <button onClick={submit} className="w-full bg-green-500 text-white rounded-md py-2 text-sm mt-2 hover:bg-green-600">
+          <button
+            onClick={submit}
+            disabled={!canSubmit}
+            className="w-full bg-green-500 text-white rounded-md py-2 text-sm mt-2 hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-green-500"
+          >
             {editingId ? "Save changes" : "Add to schedule"}
           </button>
         </Modal>
@@ -1465,7 +1552,7 @@ function Schedule({ classes, setClasses, trainers, customers, packages }) {
   );
 }
 
-function Utilization({ trainers, classes, customers, packages }) {
+function Utilization({ trainers, classes, customers }) {
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   const dayIndex = (dateStr) => {
     const d = new Date(`${dateStr}T00:00:00`);
@@ -1482,7 +1569,7 @@ function Utilization({ trainers, classes, customers, packages }) {
 
   const commissions = trainers.map((t) => {
     const completed = periodClasses.filter((c) => c.trainerId === t.id && c.status === "completed").length;
-    const commissionEarned = trainerCommission(t, periodClasses, customers, packages);
+    const commissionEarned = trainerCommission(t, periodClasses, customers);
     return {
       trainer: t,
       completed,
@@ -1638,7 +1725,7 @@ function Utilization({ trainers, classes, customers, packages }) {
   );
 }
 
-function CommissionTab({ trainers, classes, customers, packages }) {
+function CommissionTab({ trainers, classes, customers }) {
   const [mode, setMode] = useState("month");
   const [month, setMonth] = useState("2026-08");
   const [startDate, setStartDate] = useState("2026-08-01");
@@ -1648,7 +1735,7 @@ function CommissionTab({ trainers, classes, customers, packages }) {
 
   const commissions = trainers.map((t) => {
     const completed = periodClasses.filter((c) => c.trainerId === t.id && c.status === "completed").length;
-    const commissionEarned = trainerCommission(t, periodClasses, customers, packages);
+    const commissionEarned = trainerCommission(t, periodClasses, customers);
     return {
       trainer: t,
       completed,
@@ -1867,14 +1954,14 @@ export default function App() {
         </div>
         <div className="p-6 md:p-10 max-w-5xl mx-auto" style={{ fontFamily: "'Segoe UI', 'Helvetica Neue', Arial, sans-serif" }}>
           {tab === "dashboard" && (
-            <Dashboard trainers={trainers} customers={customers} classes={classes} payments={payments} packages={packages} />
+            <Dashboard trainers={trainers} customers={customers} classes={classes} payments={payments} />
           )}
-          {tab === "customers" && <Customers customers={customers} setCustomers={setCustomers} packages={packages} setPackages={setPackages} payments={payments} setPayments={setPayments} />}
+          {tab === "customers" && <Customers customers={customers} setCustomers={setCustomers} payments={payments} setPayments={setPayments} />}
           {tab === "packages" && <Packages packages={packages} setPackages={setPackages} />}
           {tab === "trainers" && <Trainers trainers={trainers} setTrainers={setTrainers} />}
-          {tab === "schedule" && <Schedule classes={classes} setClasses={setClasses} trainers={trainers} customers={customers} packages={packages} />}
-          {tab === "utilization" && <Utilization trainers={trainers} classes={classes} customers={customers} packages={packages} />}
-          {tab === "commission" && <CommissionTab trainers={trainers} classes={classes} customers={customers} packages={packages} />}
+          {tab === "schedule" && <Schedule classes={classes} setClasses={setClasses} trainers={trainers} customers={customers} />}
+          {tab === "utilization" && <Utilization trainers={trainers} classes={classes} customers={customers} />}
+          {tab === "commission" && <CommissionTab trainers={trainers} classes={classes} customers={customers} />}
         </div>
       </div>
     </div>
