@@ -402,7 +402,7 @@ function Dashboard({ trainers, customers, classes, payments }) {
   );
 }
 
-function Customers({ customers, setCustomers, payments, setPayments }) {
+function Customers({ customers, setCustomers, insertCustomer, payments, setPayments }) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [source, setSource] = useState("new"); // "new" or "existing" — only relevant while adding
@@ -491,7 +491,7 @@ function Customers({ customers, setCustomers, payments, setPayments }) {
 
   // Saving a customer automatically generates (or updates) the matching payment record
   // from the classes/price/tax entered here — no separate "log payment" step needed.
-  const submit = () => {
+  const submit = async () => {
     if (!form.name) return;
     const storedPerClassPrice = form.unlimited ? (Number(form.priceInput) || 0) / UNLIMITED_ASSUMED_CLASSES : Number(form.priceInput) || 0;
     const customerFields = {
@@ -532,8 +532,11 @@ function Customers({ customers, setCustomers, payments, setPayments }) {
         return [...ps, { id: uid("p"), date: new Date().toISOString().slice(0, 10), customerId: editingId, ...paymentFields }];
       });
     } else {
+      // The payment references this customer by id (foreign key), so the customer
+      // row must be confirmed saved before the payment is sent — otherwise the two
+      // near-simultaneous saves can race and the payment gets rejected.
       const newId = uid("c");
-      setCustomers((cs) => [...cs, { id: newId, joined: new Date().toISOString().slice(0, 10), ...customerFields }]);
+      await insertCustomer({ id: newId, joined: new Date().toISOString().slice(0, 10), ...customerFields });
       setPayments((ps) => [...ps, { id: uid("p"), date: new Date().toISOString().slice(0, 10), customerId: newId, ...paymentFields }]);
     }
     setForm(blankForm);
@@ -1897,7 +1900,21 @@ function useSyncedTable(table, seed, enabled, onError) {
     });
   };
 
-  return [rows, setSynced];
+  // Inserts one row and, unlike setSynced, can be awaited — needed for cases where
+  // a dependent row (e.g. a payment, which references a customer by foreign key)
+  // must not be saved until this row is confirmed saved first.
+  const insertRow = async (row) => {
+    setRows((prev) => [...prev, row]);
+    if (!enabled) return { error: null };
+    const { error } = await supabase.from(table).insert(row);
+    if (error) {
+      console.error(`Insert failed on ${table}:`, error.message);
+      onError?.(`Saving a new entry to ${table} failed (${error.message}). It's only on this device until this is fixed.`);
+    }
+    return { error };
+  };
+
+  return [rows, setSynced, insertRow];
 }
 
 function LoginScreen() {
@@ -1957,7 +1974,7 @@ export default function App() {
   const [syncError, setSyncError] = useState("");
   const [trainers, setTrainers] = useSyncedTable("trainers", seedTrainers, signedIn, setSyncError);
   const [packages, setPackages] = useSyncedTable("packages", seedPackages, signedIn, setSyncError);
-  const [customers, setCustomers] = useSyncedTable("customers", seedCustomers, signedIn, setSyncError);
+  const [customers, setCustomers, insertCustomer] = useSyncedTable("customers", seedCustomers, signedIn, setSyncError);
   const [classes, setClasses] = useSyncedTable("classes", seedClasses, signedIn, setSyncError);
   const [payments, setPayments] = useSyncedTable("payments", seedPayments, signedIn, setSyncError);
 
@@ -2001,7 +2018,7 @@ export default function App() {
           {tab === "dashboard" && (
             <Dashboard trainers={trainers} customers={customers} classes={classes} payments={payments} />
           )}
-          {tab === "customers" && <Customers customers={customers} setCustomers={setCustomers} payments={payments} setPayments={setPayments} />}
+          {tab === "customers" && <Customers customers={customers} setCustomers={setCustomers} insertCustomer={insertCustomer} payments={payments} setPayments={setPayments} />}
           {tab === "packages" && <Packages packages={packages} setPackages={setPackages} />}
           {tab === "trainers" && <Trainers trainers={trainers} setTrainers={setTrainers} />}
           {tab === "schedule" && <Schedule classes={classes} setClasses={setClasses} trainers={trainers} customers={customers} setCustomers={setCustomers} />}
