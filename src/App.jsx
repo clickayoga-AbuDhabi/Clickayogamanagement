@@ -2031,13 +2031,16 @@ function CommissionTab({ trainers, classes, customers }) {
   const periodClasses = classes.filter((c) => inPeriod(c.date));
 
   const commissions = trainers.map((t) => {
-    const completed = periodClasses.filter((c) => c.trainerId === t.id && c.status === "completed").length;
+    const completedClasses = periodClasses.filter((c) => c.trainerId === t.id && c.status === "completed");
+    const completed = completedClasses.length;
     const commissionEarned = trainerCommission(t, periodClasses, customers);
+    const zeroPricedCount = completedClasses.filter((c) => classPrice(c, customers) <= 0).length;
     return {
       trainer: t,
       completed,
       commissionEarned,
       total: t.baseSalary + commissionEarned,
+      zeroPricedCount,
     };
   });
 
@@ -2073,6 +2076,12 @@ function CommissionTab({ trainers, classes, customers }) {
               <span className="font-medium text-green-900 border-t border-gray-100 pt-1 mt-1">Total payout</span>
               <span className="font-serif text-lg text-green-900 border-t border-gray-100 pt-1 mt-1 text-right">{AED(c.total)}</span>
             </div>
+            {c.zeroPricedCount > 0 && (
+              <div className="flex items-center gap-1 text-xs text-red-600 mt-2">
+                <AlertTriangle size={12} />
+                {c.zeroPricedCount} completed class{c.zeroPricedCount === 1 ? "" : "es"} {c.zeroPricedCount === 1 ? "has" : "have"} a customer with no price set — check the Customers tab.
+              </div>
+            )}
           </Card>
         ))}
       </div>
