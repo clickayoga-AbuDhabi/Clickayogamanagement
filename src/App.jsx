@@ -1093,7 +1093,7 @@ function Packages({ packages, setPackages }) {
   );
 }
 
-function Schedule({ classes, setClasses, trainers, customers }) {
+function Schedule({ classes, setClasses, trainers, customers, setCustomers }) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const blankForm = { date: "2026-08-27", time: "07:00", trainerId: trainers[0]?.id, customerId: customers[0]?.id };
@@ -1157,17 +1157,42 @@ function Schedule({ classes, setClasses, trainers, customers }) {
   })();
   const canSubmit = !trainerConflict && !customerOutOfClasses;
 
+  // Adjusts a customer's classesRemaining by delta (e.g. -1 to consume a class on
+  // booking, +1 to refund it if the booking is cancelled or reassigned). Leaves
+  // unlimited ("—") or otherwise non-numeric values untouched. classesRemaining may
+  // arrive as a string from the live database, so Number() handles both cases.
+  const adjustCustomerClasses = (customerId, delta) => {
+    setCustomers((cs) =>
+      cs.map((c) => {
+        if (c.id !== customerId) return c;
+        const num = Number(c.classesRemaining);
+        if (Number.isNaN(num)) return c;
+        return { ...c, classesRemaining: Math.max(0, num + delta) };
+      })
+    );
+  };
+
   const submit = () => {
     if (!canSubmit) return;
     if (editingId) {
+      const original = classes.find((c) => c.id === editingId);
       setClasses((cs) => cs.map((c) => (c.id === editingId ? { ...c, ...form } : c)));
+      if (original && original.customerId !== form.customerId) {
+        adjustCustomerClasses(original.customerId, 1); // refund the old customer's slot
+        adjustCustomerClasses(form.customerId, -1); // consume the new customer's slot
+      }
     } else {
       setClasses((cs) => [...cs, { id: uid("cl"), status: "scheduled", ...form }]);
+      adjustCustomerClasses(form.customerId, -1);
     }
     setOpen(false);
   };
 
-  const removeClass = (id) => setClasses((cs) => cs.filter((c) => c.id !== id));
+  const removeClass = (id) => {
+    const cls = classes.find((c) => c.id === id);
+    setClasses((cs) => cs.filter((c) => c.id !== id));
+    if (cls) adjustCustomerClasses(cls.customerId, 1);
+  };
 
   const toggleComplete = (id) =>
     setClasses((cs) => cs.map((c) => (c.id === id ? { ...c, status: c.status === "completed" ? "scheduled" : "completed" } : c)));
@@ -1961,7 +1986,7 @@ export default function App() {
           {tab === "customers" && <Customers customers={customers} setCustomers={setCustomers} payments={payments} setPayments={setPayments} />}
           {tab === "packages" && <Packages packages={packages} setPackages={setPackages} />}
           {tab === "trainers" && <Trainers trainers={trainers} setTrainers={setTrainers} />}
-          {tab === "schedule" && <Schedule classes={classes} setClasses={setClasses} trainers={trainers} customers={customers} />}
+          {tab === "schedule" && <Schedule classes={classes} setClasses={setClasses} trainers={trainers} customers={customers} setCustomers={setCustomers} />}
           {tab === "utilization" && <Utilization trainers={trainers} classes={classes} customers={customers} />}
           {tab === "commission" && <CommissionTab trainers={trainers} classes={classes} customers={customers} />}
         </div>
