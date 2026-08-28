@@ -1816,7 +1816,7 @@ function CommissionTab({ trainers, classes, customers }) {
 // loads the table from Supabase on mount, keeps it live via realtime subscriptions,
 // and pushes any local inserts/updates/deletes back to Supabase — so all 3 staff
 // accounts see the same data update in real time.
-function useSyncedTable(table, seed, enabled) {
+function useSyncedTable(table, seed, enabled, onError) {
   const [rows, setRows] = useState(seed);
 
   useEffect(() => {
@@ -1829,6 +1829,7 @@ function useSyncedTable(table, seed, enabled) {
       if (cancelled) return;
       if (error) {
         console.error(`Failed to load ${table}:`, error.message);
+        onError?.(`Couldn't load ${table} (${error.message}). Your changes to it may not be visible or saved.`);
         return;
       }
       if (data && data.length) {
@@ -1836,7 +1837,10 @@ function useSyncedTable(table, seed, enabled) {
       } else {
         // First time this project is used — seed the live database with the starter data.
         const { error: seedError } = await supabase.from(table).insert(seed);
-        if (seedError) console.error(`Failed to seed ${table}:`, seedError.message);
+        if (seedError) {
+          console.error(`Failed to seed ${table}:`, seedError.message);
+          onError?.(`Couldn't set up ${table} (${seedError.message}).`);
+        }
       }
 
       channel = supabase
@@ -1867,7 +1871,10 @@ function useSyncedTable(table, seed, enabled) {
         prev.forEach((r) => {
           if (!nextIds.has(r.id)) {
             supabase.from(table).delete().eq("id", r.id).then(({ error }) => {
-              if (error) console.error(`Delete failed on ${table}:`, error.message);
+              if (error) {
+                console.error(`Delete failed on ${table}:`, error.message);
+                onError?.(`A delete on ${table} failed to save (${error.message}). It may reappear.`);
+              }
             });
           }
         });
@@ -1875,11 +1882,17 @@ function useSyncedTable(table, seed, enabled) {
           const old = prev.find((p) => p.id === r.id);
           if (!old) {
             supabase.from(table).insert(r).then(({ error }) => {
-              if (error) console.error(`Insert failed on ${table}:`, error.message);
+              if (error) {
+                console.error(`Insert failed on ${table}:`, error.message);
+                onError?.(`Saving a new entry to ${table} failed (${error.message}). It's only on this device until this is fixed.`);
+              }
             });
           } else if (JSON.stringify(old) !== JSON.stringify(r)) {
             supabase.from(table).update(r).eq("id", r.id).then(({ error }) => {
-              if (error) console.error(`Update failed on ${table}:`, error.message);
+              if (error) {
+                console.error(`Update failed on ${table}:`, error.message);
+                onError?.(`Saving a change to ${table} failed (${error.message}). It's only on this device until this is fixed.`);
+              }
             });
           }
         });
@@ -1945,11 +1958,12 @@ export default function App() {
   }, []);
 
   const signedIn = !!session;
-  const [trainers, setTrainers] = useSyncedTable("trainers", seedTrainers, signedIn);
-  const [packages, setPackages] = useSyncedTable("packages", seedPackages, signedIn);
-  const [customers, setCustomers] = useSyncedTable("customers", seedCustomers, signedIn);
-  const [classes, setClasses] = useSyncedTable("classes", seedClasses, signedIn);
-  const [payments, setPayments] = useSyncedTable("payments", seedPayments, signedIn);
+  const [syncError, setSyncError] = useState("");
+  const [trainers, setTrainers] = useSyncedTable("trainers", seedTrainers, signedIn, setSyncError);
+  const [packages, setPackages] = useSyncedTable("packages", seedPackages, signedIn, setSyncError);
+  const [customers, setCustomers] = useSyncedTable("customers", seedCustomers, signedIn, setSyncError);
+  const [classes, setClasses] = useSyncedTable("classes", seedClasses, signedIn, setSyncError);
+  const [payments, setPayments] = useSyncedTable("payments", seedPayments, signedIn, setSyncError);
 
   if (session === undefined) {
     return <div className="min-h-screen bg-white flex items-center justify-center text-green-600 text-sm">Loading…</div>;
@@ -1980,6 +1994,14 @@ export default function App() {
           ))}
         </div>
         <div className="p-6 md:p-10 max-w-5xl mx-auto" style={{ fontFamily: "'Segoe UI', 'Helvetica Neue', Arial, sans-serif" }}>
+          {syncError && (
+            <div className="flex items-start justify-between gap-3 bg-red-50 text-red-600 text-sm rounded-md px-4 py-3 mb-6">
+              <span>{syncError}</span>
+              <button onClick={() => setSyncError("")} className="text-red-600 hover:text-red-800 shrink-0">
+                <X size={16} />
+              </button>
+            </div>
+          )}
           {tab === "dashboard" && (
             <Dashboard trainers={trainers} customers={customers} classes={classes} payments={payments} />
           )}
