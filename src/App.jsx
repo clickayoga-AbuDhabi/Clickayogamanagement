@@ -45,10 +45,10 @@ const seedPackages = [
 ];
 
 const seedCustomers = [
-  { id: "c1", name: "Fatima Al Marzooqi", phone: "050 123 4567", email: "fatima.marzooqi@gmail.com", location: "Al Reem Island, Abu Dhabi", classType: "private", unlimited: true, numberOfClasses: null, perClassPrice: 45, classesRemaining: "—", joined: "2026-06-02" },
-  { id: "c2", name: "Sara Ibrahim", phone: "052 987 1234", email: "sara.ibrahim@gmail.com", location: "Khalifa City, Abu Dhabi", classType: "private", unlimited: false, numberOfClasses: 10, perClassPrice: 120, classesRemaining: 4, joined: "2026-07-10" },
-  { id: "c3", name: "Layla Haddad", phone: "056 445 8890", email: "layla.haddad@gmail.com", location: "Corniche, Abu Dhabi", classType: "private", unlimited: false, numberOfClasses: 1, perClassPrice: 150, classesRemaining: 0, joined: "2026-08-01" },
-  { id: "c4", name: "Noor Al Hashimi", phone: "054 221 7765", email: "noor.alhashimi@gmail.com", location: "Yas Island, Abu Dhabi", classType: "group", unlimited: false, numberOfClasses: 10, perClassPrice: 62.5, classesRemaining: 7, joined: "2026-07-22" },
+  { id: "c1", name: "Fatima Al Marzooqi", phone: "050 123 4567", email: "fatima.marzooqi@gmail.com", location: "Al Reem Island, Abu Dhabi", classType: "private", unlimited: true, numberOfClasses: null, perClassPrice: 45, classesRemaining: "—", status: "active", joined: "2026-06-02" },
+  { id: "c2", name: "Sara Ibrahim", phone: "052 987 1234", email: "sara.ibrahim@gmail.com", location: "Khalifa City, Abu Dhabi", classType: "private", unlimited: false, numberOfClasses: 10, perClassPrice: 120, classesRemaining: 4, status: "active", joined: "2026-07-10" },
+  { id: "c3", name: "Layla Haddad", phone: "056 445 8890", email: "layla.haddad@gmail.com", location: "Corniche, Abu Dhabi", classType: "private", unlimited: false, numberOfClasses: 1, perClassPrice: 150, classesRemaining: 0, status: "inactive", joined: "2026-08-01" },
+  { id: "c4", name: "Noor Al Hashimi", phone: "054 221 7765", email: "noor.alhashimi@gmail.com", location: "Yas Island, Abu Dhabi", classType: "group", unlimited: false, numberOfClasses: 10, perClassPrice: 62.5, classesRemaining: 7, status: "active", joined: "2026-07-22" },
 ];
 
 const seedClasses = [
@@ -209,10 +209,10 @@ function SectionTitle({ eyebrow, title, action }) {
   );
 }
 
-function Modal({ title, onClose, children }) {
+function Modal({ title, onClose, children, wide }) {
   return (
     <div className="fixed inset-0 bg-black/30 flex items-start justify-center z-50 p-4 overflow-y-auto">
-      <Card className="w-full max-w-md p-6 my-8" style={{ maxHeight: "calc(100vh - 4rem)", overflowY: "auto" }}>
+      <Card className={`w-full ${wide ? "max-w-2xl" : "max-w-md"} p-6 my-8`} style={{ maxHeight: "calc(100vh - 4rem)", overflowY: "auto" }}>
         <div className="flex items-center justify-between mb-4 sticky top-0 bg-white pt-1 -mt-1">
           <h3 className="font-serif text-lg text-green-900">{title}</h3>
           <button onClick={onClose} className="text-green-600 hover:text-green-900">
@@ -327,8 +327,14 @@ function Dashboard({ trainers, customers, classes, payments }) {
   });
   const totalCommission = commissions.reduce((s, c) => s + c.commissionEarned, 0);
 
+  // Counts unique people (grouped by name) whose status is active — not raw
+  // booking-row count, since one person can have several booking line items.
+  const activeCustomersCount = new Set(
+    customers.filter((c) => (c.status || "active") === "active").map((c) => c.name)
+  ).size;
+
   const stats = [
-    { label: "Active customers", value: customers.length },
+    { label: "Active customers", value: activeCustomersCount },
     { label: "Classes completed", value: completedThisCycle },
     { label: "Classes scheduled", value: scheduled },
     { label: "Revenue collected in fees", value: AED(revenue) },
@@ -411,6 +417,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   const blankForm = {
     name: "", phone: "", email: "", location: "",
     joinDate: todayStr,
+    status: "active",
     classType: "private",
     unlimited: false,
     numberOfClasses: 10,
@@ -464,6 +471,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
       email: c.email || "",
       location: c.location || "",
       joinDate: c.joined || todayStr,
+      status: c.status || "active",
       classType: c.classType || "private",
       unlimited: !!c.unlimited,
       numberOfClasses: c.numberOfClasses ?? 10,
@@ -479,12 +487,13 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   };
 
   // Pre-fills contact details from an existing customer but always saves as a brand-new
-  // line item — for when the same person books another set of classes.
+  // line item — for when the same person books another set of classes. Inherits their
+  // current status rather than resetting it.
   const startNewBooking = (c) => {
     setEditingId(null);
     setSource("existing");
     setExistingPersonKey(c.name);
-    setForm({ ...blankForm, name: c.name, phone: c.phone, email: c.email || "", location: c.location || "" });
+    setForm({ ...blankForm, name: c.name, phone: c.phone, email: c.email || "", location: c.location || "", status: c.status || "active" });
     setOpen(true);
   };
 
@@ -512,6 +521,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
       email: form.email,
       location: form.location,
       joined: form.joinDate || todayStr,
+      status: form.status || "active",
       classType: form.classType,
       unlimited: form.unlimited,
       numberOfClasses: form.unlimited ? null : Number(form.numberOfClasses) || 0,
@@ -564,6 +574,15 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
     setPayments((ps) => ps.filter((p) => p.customerId !== id));
   };
 
+  // Status (active/inactive/frozen) is a person-level attribute, but bookings are
+  // stored per line item — so it's kept in sync across every booking that shares
+  // this person's name whenever it's changed from the detail view.
+  const updatePersonStatus = (name, status) => {
+    setCustomers((cs) => cs.map((c) => (c.name === name ? { ...c, status } : c)));
+  };
+
+  const [detailPerson, setDetailPerson] = useState(null);
+
   const [joinedFrom, setJoinedFrom] = useState("");
   const [joinedTo, setJoinedTo] = useState("");
 
@@ -573,6 +592,29 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
 
   const isFiltered = joinedFrom || joinedTo;
   const clearJoinedFilter = () => { setJoinedFrom(""); setJoinedTo(""); };
+
+  // Groups every booking by person (name) — each person is one row in the main
+  // table; adding a new booking for an existing person nests under them instead
+  // of appearing as a separate top-level row.
+  const groupedByName = {};
+  customers.forEach((c) => { (groupedByName[c.name] = groupedByName[c.name] || []).push(c); });
+  const allPeople = Object.entries(groupedByName).map(([name, bookings]) => {
+    const sortedBookings = [...bookings].sort((a, b) => b.joined.localeCompare(a.joined));
+    const latest = sortedBookings[0];
+    const totalRemaining = bookings.reduce((s, b) => s + (Number(b.classesRemaining) || 0), 0);
+    const hasUnlimited = bookings.some((b) => b.unlimited);
+    return { name, bookings: sortedBookings, latest, totalRemaining, hasUnlimited, status: latest.status || "active" };
+  });
+  const peopleFiltered = allPeople
+    .filter((p) => !isFiltered || p.bookings.some((b) => (!joinedFrom || b.joined >= joinedFrom) && (!joinedTo || b.joined <= joinedTo)))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const statusBadgeClass = (status) => {
+    if (status === "frozen") return "bg-blue-50 text-blue-600";
+    if (status === "inactive") return "bg-gray-100 text-gray-600";
+    return "bg-green-100 text-green-700";
+  };
+  const statusLabel = (status) => (status ? status.charAt(0).toUpperCase() + status.slice(1) : "Active");
 
   const exportCustomersCSV = () => {
     downloadCSV(
@@ -649,7 +691,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
             <X size={12} /> Clear
           </button>
         )}
-        {isFiltered && <span className="text-xs text-green-600">({sorted.length} match{sorted.length === 1 ? "" : "es"})</span>}
+        {isFiltered && <span className="text-xs text-green-600">({peopleFiltered.length} match{peopleFiltered.length === 1 ? "" : "es"})</span>}
       </div>
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
@@ -660,34 +702,32 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
               <th className="text-left px-4 py-3">Phone</th>
               <th className="text-left px-4 py-3">Email</th>
               <th className="text-left px-4 py-3">Location</th>
-              <th className="text-left px-4 py-3">Type</th>
-              <th className="text-left px-4 py-3">Remaining</th>
-              <th className="text-left px-4 py-3">Joined</th>
+              <th className="text-left px-4 py-3">Status</th>
+              <th className="text-left px-4 py-3">Bookings</th>
+              <th className="text-left px-4 py-3">Total remaining</th>
               <th className="text-left px-4 py-3"></th>
             </tr>
           </thead>
           <tbody>
-            {sorted.map((c) => (
-              <tr key={c.id} className="border-t border-gray-100">
-                <td className="px-4 py-3 text-green-900 font-medium whitespace-nowrap">{c.name}</td>
-                <td className="px-4 py-3 text-green-700 whitespace-nowrap"><span className="flex items-center gap-1"><Phone size={12} />{c.phone}</span></td>
-                <td className="px-4 py-3 text-green-700 whitespace-nowrap">{c.email || "—"}</td>
-                <td className="px-4 py-3 text-green-700 whitespace-nowrap">{c.location || "—"}</td>
-                <td className="px-4 py-3 text-green-700 whitespace-nowrap">{c.classType === "group" ? "Group" : "Private"}</td>
-                <td className="px-4 py-3 text-green-700">{c.classesRemaining}</td>
-                <td className="px-4 py-3 text-green-700 whitespace-nowrap">{c.joined}</td>
+            {peopleFiltered.map((p) => (
+              <tr key={p.name} className="border-t border-gray-100">
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <button onClick={() => setDetailPerson(p.name)} className="text-green-900 font-medium hover:underline">
+                    {p.name}
+                  </button>
+                </td>
+                <td className="px-4 py-3 text-green-700 whitespace-nowrap"><span className="flex items-center gap-1"><Phone size={12} />{p.latest.phone}</span></td>
+                <td className="px-4 py-3 text-green-700 whitespace-nowrap">{p.latest.email || "—"}</td>
+                <td className="px-4 py-3 text-green-700 whitespace-nowrap">{p.latest.location || "—"}</td>
                 <td className="px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <button onClick={() => startNewBooking(c)} className="text-green-500 hover:text-green-700" title="New booking for this customer">
-                      <RefreshCw size={15} />
-                    </button>
-                    <button onClick={() => startEdit(c)} className="text-green-600 hover:text-green-900" title="Edit this line item">
-                      <Pencil size={15} />
-                    </button>
-                    <button onClick={() => removeCustomer(c.id)} className="text-green-600 hover:text-red-500" title="Delete this line item">
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
+                  <span className={`text-xs px-2 py-1 rounded-full ${statusBadgeClass(p.status)}`}>{statusLabel(p.status)}</span>
+                </td>
+                <td className="px-4 py-3 text-green-700">{p.bookings.length}</td>
+                <td className="px-4 py-3 text-green-700">{p.hasUnlimited ? `${p.totalRemaining}+ (incl. unlimited)` : p.totalRemaining}</td>
+                <td className="px-4 py-3">
+                  <button onClick={() => startNewBooking(p.latest)} className="text-green-500 hover:text-green-700" title="New booking for this customer">
+                    <RefreshCw size={15} />
+                  </button>
                 </td>
               </tr>
             ))}
@@ -861,6 +901,117 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
         </Modal>
       )}
 
+      {detailPerson && (() => {
+        const person = allPeople.find((p) => p.name === detailPerson);
+        if (!person) return null;
+        const bookingIds = new Set(person.bookings.map((b) => b.id));
+        const personPayments = payments.filter((p) => bookingIds.has(p.customerId)).sort((a, b) => b.date.localeCompare(a.date));
+
+        const editBooking = (b) => {
+          setDetailPerson(null);
+          startEdit(b);
+        };
+        const deleteBooking = (id) => {
+          removeCustomer(id);
+          if (person.bookings.length <= 1) setDetailPerson(null);
+        };
+        const addBooking = () => {
+          setDetailPerson(null);
+          startNewBooking(person.latest);
+        };
+
+        return (
+          <Modal title={person.name} onClose={() => setDetailPerson(null)} wide>
+            <div className="mb-4 space-y-1 text-sm text-green-700">
+              <div className="flex items-center gap-1"><Phone size={12} />{person.latest.phone}</div>
+              {person.latest.email && <div>{person.latest.email}</div>}
+              {person.latest.location && <div className="flex items-center gap-1"><MapPin size={12} />{person.latest.location}</div>}
+            </div>
+
+            <Field label="Status">
+              <select className={inputCls} value={person.status} onChange={(e) => updatePersonStatus(person.name, e.target.value)}>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="frozen">Frozen</option>
+              </select>
+            </Field>
+
+            <div className="flex items-center justify-between mt-5 mb-2">
+              <h4 className="font-medium text-green-900 text-sm">Booking history</h4>
+              <button onClick={addBooking} className="flex items-center gap-1 text-xs bg-green-700 text-white px-2.5 py-1.5 rounded-md hover:bg-green-800">
+                <Plus size={12} /> New booking
+              </button>
+            </div>
+            <div className="overflow-x-auto mb-6 border border-gray-100 rounded-md">
+              <table className="w-full text-sm min-w-[520px]">
+                <thead className="bg-green-50 text-green-700 text-xs uppercase tracking-wide">
+                  <tr>
+                    <th className="text-left px-3 py-2">Type</th>
+                    <th className="text-left px-3 py-2">Classes</th>
+                    <th className="text-left px-3 py-2">Remaining</th>
+                    <th className="text-left px-3 py-2">Price</th>
+                    <th className="text-left px-3 py-2">Joined</th>
+                    <th className="text-left px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {person.bookings.map((b) => (
+                    <tr key={b.id} className="border-t border-gray-100">
+                      <td className="px-3 py-2 text-green-700 whitespace-nowrap">{b.classType === "group" ? "Group" : "Private"}</td>
+                      <td className="px-3 py-2 text-green-700 whitespace-nowrap">
+                        {b.unlimited ? "Unlimited" : b.numberOfClasses}{b.freeClasses ? ` (+${b.freeClasses} free)` : ""}
+                      </td>
+                      <td className="px-3 py-2 text-green-700">{b.classesRemaining}</td>
+                      <td className="px-3 py-2 text-green-700 whitespace-nowrap">{AED(b.perClassPrice || 0)}{b.unlimited ? "/class" : ""}</td>
+                      <td className="px-3 py-2 text-green-700 whitespace-nowrap">{b.joined}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2.5">
+                          <button onClick={() => editBooking(b)} className="text-green-600 hover:text-green-900" title="Edit this booking">
+                            <Pencil size={14} />
+                          </button>
+                          <button onClick={() => deleteBooking(b.id)} className="text-green-600 hover:text-red-500" title="Delete this booking">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <h4 className="font-medium text-green-900 text-sm mb-2">Payment history</h4>
+            <div className="overflow-x-auto border border-gray-100 rounded-md">
+              <table className="w-full text-sm min-w-[480px]">
+                <thead className="bg-green-50 text-green-700 text-xs uppercase tracking-wide">
+                  <tr>
+                    <th className="text-left px-3 py-2">Note</th>
+                    <th className="text-left px-3 py-2">Total</th>
+                    <th className="text-left px-3 py-2">Paid</th>
+                    <th className="text-left px-3 py-2">Pending</th>
+                    <th className="text-left px-3 py-2">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {personPayments.length === 0 && (
+                    <tr><td colSpan={5} className="px-3 py-3 text-green-600 text-center text-xs">No payments logged.</td></tr>
+                  )}
+                  {personPayments.map((p) => (
+                    <tr key={p.id} className="border-t border-gray-100">
+                      <td className="px-3 py-2 text-green-700 whitespace-nowrap">{p.note}</td>
+                      <td className="px-3 py-2 text-green-700 whitespace-nowrap">{AED(p.grandTotal)}</td>
+                      <td className="px-3 py-2 text-green-700 whitespace-nowrap">{AED(p.amountPaid)}</td>
+                      <td className={`px-3 py-2 whitespace-nowrap ${p.pendingAmount > 0 ? "text-red-600 font-medium" : "text-green-700"}`}>{AED(p.pendingAmount || 0)}</td>
+                      <td className="px-3 py-2 text-green-700 whitespace-nowrap">{p.date}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Modal>
+        );
+      })()}
+
       <div className="mt-8">
         <SectionTitle
           eyebrow="Ledger"
@@ -917,11 +1068,12 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   );
 }
 
-function Trainers({ trainers, setTrainers }) {
+function Trainers({ trainers, setTrainers, classes, customers }) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const blankForm = { name: "", cred: "", baseSalary: 2000, commissionRate: 0.2, monthlyTarget: 130 };
   const [form, setForm] = useState(blankForm);
+  const [detailTrainerId, setDetailTrainerId] = useState(null);
 
   const startAdd = () => {
     setEditingId(null);
@@ -963,7 +1115,9 @@ function Trainers({ trainers, setTrainers }) {
         {trainers.map((t) => (
           <Card key={t.id} className="p-5">
             <div className="flex items-center justify-between mb-1">
-              <div className="font-medium text-green-900">{t.name}</div>
+              <button onClick={() => setDetailTrainerId(t.id)} className="font-medium text-green-900 hover:underline text-left">
+                {t.name}
+              </button>
               <div className="flex items-center gap-2.5">
                 <button onClick={() => startEdit(t)} className="text-green-600 hover:text-green-900" title="Edit trainer">
                   <Pencil size={14} />
@@ -983,6 +1137,52 @@ function Trainers({ trainers, setTrainers }) {
           </Card>
         ))}
       </div>
+
+      {detailTrainerId && (() => {
+        const trainer = trainers.find((t) => t.id === detailTrainerId);
+        if (!trainer) return null;
+        const nameOfCustomer = (id) => customers.find((c) => c.id === id)?.name || "—";
+        const trainerClasses = [...classes]
+          .filter((c) => c.trainerId === detailTrainerId)
+          .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+        const scheduled = trainerClasses.filter((c) => c.status === "scheduled");
+        const completed = trainerClasses.filter((c) => c.status === "completed");
+
+        const sessionTable = (rows, emptyLabel) => (
+          <div className="overflow-x-auto border border-gray-100 rounded-md mb-5">
+            <table className="w-full text-sm min-w-[420px]">
+              <thead className="bg-green-50 text-green-700 text-xs uppercase tracking-wide">
+                <tr>
+                  <th className="text-left px-3 py-2">Date</th>
+                  <th className="text-left px-3 py-2">Time</th>
+                  <th className="text-left px-3 py-2">Customer</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length === 0 && (
+                  <tr><td colSpan={3} className="px-3 py-3 text-green-600 text-center text-xs">{emptyLabel}</td></tr>
+                )}
+                {rows.map((c) => (
+                  <tr key={c.id} className="border-t border-gray-100">
+                    <td className="px-3 py-2 text-green-700 whitespace-nowrap">{c.date}</td>
+                    <td className="px-3 py-2 text-green-700 whitespace-nowrap">{c.time}</td>
+                    <td className="px-3 py-2 text-green-700 whitespace-nowrap">{nameOfCustomer(c.customerId)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+
+        return (
+          <Modal title={`${trainer.name} — sessions`} onClose={() => setDetailTrainerId(null)} wide>
+            <h4 className="font-medium text-green-900 text-sm mb-2">Scheduled ({scheduled.length})</h4>
+            {sessionTable(scheduled, "No upcoming sessions.")}
+            <h4 className="font-medium text-green-900 text-sm mb-2">Completed ({completed.length})</h4>
+            {sessionTable(completed, "No completed sessions yet.")}
+          </Modal>
+        );
+      })()}
 
       {open && (
         <Modal title={editingId ? "Edit trainer" : "Add trainer"} onClose={() => setOpen(false)}>
@@ -2079,7 +2279,7 @@ export default function App() {
           )}
           {tab === "customers" && <Customers customers={customers} setCustomers={setCustomers} insertCustomer={insertCustomer} payments={payments} setPayments={setPayments} />}
           {tab === "packages" && <Packages packages={packages} setPackages={setPackages} />}
-          {tab === "trainers" && <Trainers trainers={trainers} setTrainers={setTrainers} />}
+          {tab === "trainers" && <Trainers trainers={trainers} setTrainers={setTrainers} classes={classes} customers={customers} />}
           {tab === "schedule" && <Schedule classes={classes} setClasses={setClasses} trainers={trainers} customers={customers} setCustomers={setCustomers} />}
           {tab === "utilization" && <Utilization trainers={trainers} classes={classes} customers={customers} />}
           {tab === "commission" && <CommissionTab trainers={trainers} classes={classes} customers={customers} />}
