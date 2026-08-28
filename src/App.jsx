@@ -70,6 +70,28 @@ const seedPayments = [
 
 const uid = (p) => `${p}${Math.random().toString(36).slice(2, 8)}`;
 
+// Date helpers — all period pickers (month/date-range selectors, week/day calendar
+// views) default to "today" via these rather than a fixed date, so newly completed
+// classes always show up in the default view regardless of what month it actually is.
+const pad2 = (n) => String(n).padStart(2, "0");
+const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+const thisMonthISO = () => todayISO().slice(0, 7);
+const monthStartISO = () => `${thisMonthISO()}-01`;
+const monthEndISO = () => {
+  const d = new Date();
+  const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  return `${end.getFullYear()}-${pad2(end.getMonth() + 1)}-${pad2(end.getDate())}`;
+};
+const mondayOfThisWeekISO = () => {
+  const d = new Date();
+  const offset = (d.getDay() + 6) % 7; // Monday-first
+  d.setDate(d.getDate() - offset);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+
 const AED = (n) => `AED ${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
 // Builds a CSV file from rows of {label, value} pairs per column and triggers a browser
@@ -294,9 +316,9 @@ function PeriodSelector({ mode, setMode, month, setMonth, startDate, setStartDat
 
 function Dashboard({ trainers, customers, classes, payments }) {
   const [mode, setMode] = useState("month");
-  const [month, setMonth] = useState("2026-08");
-  const [startDate, setStartDate] = useState("2026-08-01");
-  const [endDate, setEndDate] = useState("2026-08-31");
+  const [month, setMonth] = useState(thisMonthISO());
+  const [startDate, setStartDate] = useState(monthStartISO());
+  const [endDate, setEndDate] = useState(monthEndISO());
 
   const inPeriod = (dateStr) => (mode === "month" ? dateStr.startsWith(month) : dateStr >= startDate && dateStr <= endDate);
 
@@ -1344,13 +1366,13 @@ function Packages({ packages, setPackages }) {
 function Schedule({ classes, setClasses, trainers, customers, setCustomers }) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const blankForm = { date: "2026-08-27", time: "07:00", trainerId: trainers[0]?.id, customerId: customers[0]?.id };
+  const blankForm = { date: todayISO(), time: "07:00", trainerId: trainers[0]?.id, customerId: customers[0]?.id };
   const [form, setForm] = useState(blankForm);
   const [view, setView] = useState("list");
   const [sortDir, setSortDir] = useState("asc");
   const [viewMonth, setViewMonth] = useState({ year: 2026, month: 7 }); // August 2026, 0-indexed
-  const [weekStart, setWeekStart] = useState("2026-08-24"); // a Monday
-  const [dayDate, setDayDate] = useState("2026-08-27");
+  const [weekStart, setWeekStart] = useState(mondayOfThisWeekISO());
+  const [dayDate, setDayDate] = useState(todayISO());
   const [customerFilter, setCustomerFilter] = useState("");
 
   const nameOf = (list, id) => list.find((x) => x.id === id)?.name || "—";
@@ -1836,9 +1858,9 @@ function Utilization({ trainers, classes, customers }) {
 
   // ----- Overall period (drives stats + commission progress below) -----
   const [mode, setMode] = useState("month");
-  const [month, setMonth] = useState("2026-08");
-  const [startDate, setStartDate] = useState("2026-08-01");
-  const [endDate, setEndDate] = useState("2026-08-31");
+  const [month, setMonth] = useState(thisMonthISO());
+  const [startDate, setStartDate] = useState(monthStartISO());
+  const [endDate, setEndDate] = useState(monthEndISO());
   const inPeriod = (dateStr) => (mode === "month" ? dateStr.startsWith(month) : dateStr >= startDate && dateStr <= endDate);
   const periodClasses = classes.filter((c) => inPeriod(c.date));
 
@@ -1860,7 +1882,7 @@ function Utilization({ trainers, classes, customers }) {
   const totalUpcoming = periodClasses.filter((c) => c.status === "scheduled").length;
 
   // ----- Weekly pattern (its own week navigator, independent of the period above) -----
-  const [weekStart, setWeekStart] = useState("2026-08-24"); // a Monday
+  const [weekStart, setWeekStart] = useState(mondayOfThisWeekISO());
   const pad = (n) => String(n).padStart(2, "0");
   const addDays = (dateStr, n) => {
     const d = new Date(`${dateStr}T00:00:00`);
@@ -2002,9 +2024,9 @@ function Utilization({ trainers, classes, customers }) {
 
 function CommissionTab({ trainers, classes, customers }) {
   const [mode, setMode] = useState("month");
-  const [month, setMonth] = useState("2026-08");
-  const [startDate, setStartDate] = useState("2026-08-01");
-  const [endDate, setEndDate] = useState("2026-08-31");
+  const [month, setMonth] = useState(thisMonthISO());
+  const [startDate, setStartDate] = useState(monthStartISO());
+  const [endDate, setEndDate] = useState(monthEndISO());
   const inPeriod = (dateStr) => (mode === "month" ? dateStr.startsWith(month) : dateStr >= startDate && dateStr <= endDate);
   const periodClasses = classes.filter((c) => inPeriod(c.date));
 
