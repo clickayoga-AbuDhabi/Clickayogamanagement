@@ -161,7 +161,7 @@ function TopBar({ tab, setTab, userEmail }) {
         <div className="px-6 pt-8 pb-6 border-b border-green-100">
           <div className="flex items-center gap-2 text-emerald-600">
             <Sparkles size={18} />
-            <span className="text-xs tracking-[0.25em] uppercase">Studio Ops</span>
+            <span className="text-xs tracking-[0.25em] uppercase">Management System</span>
           </div>
           <h1 className="mt-1 font-serif text-2xl leading-tight">Click A Yoga</h1>
           <p className="text-xs text-green-600 mt-1">Abu Dhabi · Naturopathy-led practice</p>
@@ -413,6 +413,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   const [editingId, setEditingId] = useState(null);
   const [source, setSource] = useState("new"); // "new" or "existing" — only relevant while adding
   const [existingPersonKey, setExistingPersonKey] = useState("");
+  const [lockedBooking, setLockedBooking] = useState(false); // true when opened via "New booking" — skips the new/existing picker
   const todayStr = new Date().toISOString().slice(0, 10);
   const blankForm = {
     name: "", phone: "", email: "", location: "",
@@ -454,6 +455,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
 
   const startAdd = () => {
     setEditingId(null);
+    setLockedBooking(false);
     setSource(uniquePeople.length ? "existing" : "new");
     setExistingPersonKey("");
     setForm(blankForm);
@@ -464,6 +466,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   // Pulls pricing/payment details from that row's existing payment record, if one exists.
   const startEdit = (c) => {
     setEditingId(c.id);
+    setLockedBooking(false);
     const existingPayment = payments.find((p) => p.customerId === c.id);
     setForm({
       name: c.name,
@@ -491,6 +494,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   // current status rather than resetting it.
   const startNewBooking = (c) => {
     setEditingId(null);
+    setLockedBooking(true);
     setSource("existing");
     setExistingPersonKey(c.name);
     setForm({ ...blankForm, name: c.name, phone: c.phone, email: c.email || "", location: c.location || "", status: c.status || "active" });
@@ -572,6 +576,14 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   const removeCustomer = (id) => {
     setCustomers((cs) => cs.filter((c) => c.id !== id));
     setPayments((ps) => ps.filter((p) => p.customerId !== id));
+  };
+
+  // Deletes every booking (and matching payment) for a person at once — used by the
+  // delete icon on the main list, since that row represents the whole person now.
+  const removePerson = (name) => {
+    const idsToRemove = new Set(customers.filter((c) => c.name === name).map((c) => c.id));
+    setCustomers((cs) => cs.filter((c) => c.name !== name));
+    setPayments((ps) => ps.filter((p) => !idsToRemove.has(p.customerId)));
   };
 
   // Status (active/inactive/frozen) is a person-level attribute, but bookings are
@@ -725,9 +737,14 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
                 <td className="px-4 py-3 text-green-700">{p.bookings.length}</td>
                 <td className="px-4 py-3 text-green-700">{p.hasUnlimited ? `${p.totalRemaining}+ (incl. unlimited)` : p.totalRemaining}</td>
                 <td className="px-4 py-3">
-                  <button onClick={() => startNewBooking(p.latest)} className="text-green-500 hover:text-green-700" title="New booking for this customer">
-                    <RefreshCw size={15} />
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => startNewBooking(p.latest)} className="text-green-500 hover:text-green-700" title="New booking for this customer">
+                      <RefreshCw size={15} />
+                    </button>
+                    <button onClick={() => removePerson(p.name)} className="text-green-600 hover:text-red-500" title="Delete this customer and all their bookings">
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -737,8 +754,8 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
       </Card>
 
       {open && (
-        <Modal title={editingId ? "Edit customer" : "Add customer"} onClose={() => setOpen(false)}>
-          {!editingId && (
+        <Modal title={editingId ? "Edit customer" : lockedBooking ? `New booking — ${form.name}` : "Add customer"} onClose={() => setOpen(false)}>
+          {!editingId && !lockedBooking && (
             <Field label="This line item is for">
               <div className="flex bg-green-50 rounded-md p-1 mb-1">
                 <button
@@ -758,7 +775,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
             </Field>
           )}
 
-          {!editingId && source === "existing" && (
+          {!editingId && !lockedBooking && source === "existing" && (
             <Field label="Select customer">
               <select className={inputCls} value={existingPersonKey} onChange={(e) => pickExistingPerson(e.target.value)}>
                 <option value="" disabled>Choose a customer…</option>
@@ -2165,7 +2182,7 @@ function LoginScreen() {
       <Card className="w-full max-w-sm p-6">
         <div className="flex items-center gap-2 text-green-500 mb-1">
           <Sparkles size={18} />
-          <span className="text-xs tracking-[0.25em] uppercase">Studio Ops</span>
+          <span className="text-xs tracking-[0.25em] uppercase">Management System</span>
         </div>
         <h1 className="font-serif text-2xl text-green-900 mb-4">Click A Yoga</h1>
         <form onSubmit={submit}>
