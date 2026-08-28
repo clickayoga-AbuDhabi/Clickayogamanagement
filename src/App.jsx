@@ -407,11 +407,14 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   const [editingId, setEditingId] = useState(null);
   const [source, setSource] = useState("new"); // "new" or "existing" — only relevant while adding
   const [existingPersonKey, setExistingPersonKey] = useState("");
+  const todayStr = new Date().toISOString().slice(0, 10);
   const blankForm = {
     name: "", phone: "", email: "", location: "",
+    joinDate: todayStr,
     classType: "private",
     unlimited: false,
     numberOfClasses: 10,
+    freeClasses: 0,
     priceInput: 150,
     classesRemaining: 10,
     taxCharged: false,
@@ -460,9 +463,11 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
       phone: c.phone,
       email: c.email || "",
       location: c.location || "",
+      joinDate: c.joined || todayStr,
       classType: c.classType || "private",
       unlimited: !!c.unlimited,
       numberOfClasses: c.numberOfClasses ?? 10,
+      freeClasses: c.freeClasses || 0,
       priceInput: c.unlimited ? Math.round((Number(c.perClassPrice) || 0) * UNLIMITED_ASSUMED_CLASSES) : Number(c.perClassPrice) || 0,
       classesRemaining: c.classesRemaining,
       taxCharged: existingPayment?.taxCharged || false,
@@ -484,7 +489,13 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   };
 
   const setClassesFor = (numberOfClasses) => {
-    setForm({ ...form, numberOfClasses, classesRemaining: Number(numberOfClasses) || 0 });
+    const remaining = (Number(numberOfClasses) || 0) + (Number(form.freeClasses) || 0);
+    setForm({ ...form, numberOfClasses, classesRemaining: remaining });
+  };
+
+  const setFreeClassesFor = (freeClasses) => {
+    const remaining = (Number(form.numberOfClasses) || 0) + (Number(freeClasses) || 0);
+    setForm({ ...form, freeClasses, classesRemaining: remaining });
   };
 
   const markPaidInFull = () => setForm({ ...form, amountPaid: grandTotal });
@@ -494,21 +505,25 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   const submit = async () => {
     if (!form.name) return;
     const storedPerClassPrice = form.unlimited ? (Number(form.priceInput) || 0) / UNLIMITED_ASSUMED_CLASSES : Number(form.priceInput) || 0;
+    const freeClasses = form.unlimited ? 0 : Number(form.freeClasses) || 0;
     const customerFields = {
       name: form.name,
       phone: form.phone,
       email: form.email,
       location: form.location,
+      joined: form.joinDate || todayStr,
       classType: form.classType,
       unlimited: form.unlimited,
       numberOfClasses: form.unlimited ? null : Number(form.numberOfClasses) || 0,
+      freeClasses,
       perClassPrice: storedPerClassPrice,
       classesRemaining: form.unlimited ? "—" : Number(form.classesRemaining) || 0,
     };
 
     const classesLabel = form.unlimited ? "Unlimited monthly" : `${Number(form.numberOfClasses) || 0} classes`;
     const priceLabel = `${AED(Number(form.priceInput) || 0)}${form.unlimited ? "/mo" : ""}`;
-    const note = `${classesLabel} × ${priceLabel} (${form.classType})`;
+    const freeLabel = freeClasses > 0 ? ` + ${freeClasses} free` : "";
+    const note = `${classesLabel} × ${priceLabel} (${form.classType})${freeLabel}`;
     const taxPercent = form.taxCharged ? Number(form.taxPercent) || 0 : 0;
     const paymentFields = {
       note,
@@ -536,7 +551,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
       // row must be confirmed saved before the payment is sent — otherwise the two
       // near-simultaneous saves can race and the payment gets rejected.
       const newId = uid("c");
-      await insertCustomer({ id: newId, joined: new Date().toISOString().slice(0, 10), ...customerFields });
+      await insertCustomer({ id: newId, ...customerFields });
       setPayments((ps) => [...ps, { id: uid("p"), date: new Date().toISOString().slice(0, 10), customerId: newId, ...paymentFields }]);
     }
     setForm(blankForm);
@@ -562,7 +577,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   const exportCustomersCSV = () => {
     downloadCSV(
       `click-a-yoga-customers-${new Date().toISOString().slice(0, 10)}.csv`,
-      ["Name", "Phone", "Email", "Location", "Class Type", "Classes", "Per-Class Price", "Classes Remaining", "Joined"],
+      ["Name", "Phone", "Email", "Location", "Class Type", "Classes", "Free Classes", "Per-Class Price", "Classes Remaining", "Joined"],
       sorted.map((c) => [
         c.name,
         c.phone,
@@ -570,6 +585,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
         c.location || "",
         c.classType === "group" ? "Group" : "Private",
         c.unlimited ? "Unlimited" : c.numberOfClasses,
+        c.freeClasses || 0,
         AED(c.perClassPrice || 0),
         c.classesRemaining,
         c.joined,
@@ -748,6 +764,9 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
               placeholder="e.g. Al Reem Island, Abu Dhabi"
             />
           </Field>
+          <Field label="Joining date">
+            <input type="date" className={inputCls} value={form.joinDate} onChange={(e) => setForm({ ...form, joinDate: e.target.value })} />
+          </Field>
 
           <Field label="Class type">
             <select className={inputCls} value={form.classType} onChange={(e) => setForm({ ...form, classType: e.target.value })}>
@@ -770,6 +789,11 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
               <input type="number" className={inputCls} value={form.numberOfClasses} onChange={(e) => setClassesFor(e.target.value)} />
             </Field>
           )}
+          {!form.unlimited && (
+            <Field label="Free classes (bonus, added to total — no charge)">
+              <input type="number" className={inputCls} value={form.freeClasses} onChange={(e) => setFreeClassesFor(e.target.value)} />
+            </Field>
+          )}
           <Field label={form.unlimited ? "Price per month (AED)" : "Price per class (AED)"}>
             <input type="number" className={inputCls} value={form.priceInput} onChange={(e) => setForm({ ...form, priceInput: e.target.value })} />
           </Field>
@@ -784,9 +808,13 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
             </Field>
           )}
 
-          <div className="flex items-center justify-between text-sm bg-green-50 text-green-700 rounded-md px-3 py-2 mb-3">
+          <div className="flex items-center justify-between text-sm bg-green-50 text-green-700 rounded-md px-3 py-2 mb-1">
             <span>Subtotal</span>
             <span className="font-medium text-green-900">{AED(subtotal)}</span>
+          </div>
+          <div className="text-[11px] text-green-600 mb-3 min-h-[14px]">
+            {!form.unlimited && Number(form.freeClasses) > 0 &&
+              `Charged for ${form.numberOfClasses} classes + ${form.freeClasses} free = ${Number(form.numberOfClasses || 0) + Number(form.freeClasses || 0)} total classes.`}
           </div>
 
           <Field label="Tax charged?">
@@ -1963,11 +1991,24 @@ function LoginScreen() {
 export default function App() {
   const [tab, setTab] = useState("dashboard");
   const [session, setSession] = useState(undefined); // undefined = still checking, null = signed out
+  const [authTimedOut, setAuthTimedOut] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (!settled) setAuthTimedOut(true);
+    }, 10000);
+
+    supabase.auth.getSession().then(({ data }) => {
+      settled = true;
+      clearTimeout(timeout);
+      setSession(data.session);
+    });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
-    return () => listener.subscription.unsubscribe();
+    return () => {
+      listener.subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
   }, []);
 
   const signedIn = !!session;
@@ -1979,6 +2020,24 @@ export default function App() {
   const [payments, setPayments] = useSyncedTable("payments", seedPayments, signedIn, setSyncError);
 
   if (session === undefined) {
+    if (authTimedOut) {
+      return (
+        <div className="min-h-screen bg-white flex items-center justify-center p-6">
+          <div className="max-w-sm text-center">
+            <div className="text-red-600 text-sm font-medium mb-2">Couldn't reach the server</div>
+            <p className="text-green-700 text-sm mb-4">
+              This usually means the database is temporarily paused, or this network is blocking the connection. Try refreshing, or check the Supabase project status.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="bg-green-700 text-white text-sm px-4 py-2 rounded-md hover:bg-green-800"
+            >
+              Try again
+            </button>
+          </div>
+        </div>
+      );
+    }
     return <div className="min-h-screen bg-white flex items-center justify-center text-green-600 text-sm">Loading…</div>;
   }
   if (!session) {
