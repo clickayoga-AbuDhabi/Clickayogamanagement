@@ -1464,8 +1464,16 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers }) {
     if (cls) adjustCustomerClasses(cls.customerId, 1);
   };
 
+  // Only blocks the scheduled → completed transition for classes dated after today;
+  // marking an already-completed future-dated class back to scheduled is still allowed.
   const toggleComplete = (id) =>
-    setClasses((cs) => cs.map((c) => (c.id === id ? { ...c, status: c.status === "completed" ? "scheduled" : "completed" } : c)));
+    setClasses((cs) =>
+      cs.map((c) => {
+        if (c.id !== id) return c;
+        if (c.status !== "completed" && c.date > todayISO()) return c;
+        return { ...c, status: c.status === "completed" ? "scheduled" : "completed" };
+      })
+    );
 
   const sorted = [...filteredClasses].sort((a, b) => {
     const cmp = (a.date + a.time).localeCompare(b.date + b.time);
@@ -1616,7 +1624,12 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers }) {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <button onClick={() => toggleComplete(c.id)} className="text-green-500 hover:text-green-700" title="Toggle completed">
+                      <button
+                        onClick={() => toggleComplete(c.id)}
+                        disabled={c.status !== "completed" && c.date > todayISO()}
+                        className={`${c.status !== "completed" && c.date > todayISO() ? "text-green-300 cursor-not-allowed" : "text-green-500 hover:text-green-700"}`}
+                        title={c.status !== "completed" && c.date > todayISO() ? "Can't mark a future class as completed" : "Toggle completed"}
+                      >
                         <Check size={16} />
                       </button>
                       <button onClick={() => startEdit(c)} className="text-green-600 hover:text-green-900" title="Edit session">
@@ -1670,7 +1683,12 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers }) {
                     </span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <button onClick={() => toggleComplete(c.id)} className="text-green-500 hover:text-green-700" title="Toggle completed">
+                    <button
+                      onClick={() => toggleComplete(c.id)}
+                      disabled={c.status !== "completed" && c.date > todayISO()}
+                      className={`${c.status !== "completed" && c.date > todayISO() ? "text-green-300 cursor-not-allowed" : "text-green-500 hover:text-green-700"}`}
+                      title={c.status !== "completed" && c.date > todayISO() ? "Can't mark a future class as completed" : "Toggle completed"}
+                    >
                       <Check size={16} />
                     </button>
                     <button onClick={() => startEdit(c)} className="text-green-600 hover:text-green-900" title="Edit session">
