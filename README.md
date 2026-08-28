@@ -1,4 +1,4 @@
-# Click A Yoga — Studio Ops
+# Click A Yoga — Schesuler
 
 A live, shared studio management app: customers, packages, trainers, scheduling,
 payments, and tiered commission — synced in real time across everyone who's signed in.
