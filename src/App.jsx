@@ -1817,7 +1817,7 @@ function CommissionTab({ trainers, classes, customers }) {
 // and pushes any local inserts/updates/deletes back to Supabase — so all 3 staff
 // accounts see the same data update in real time.
 function useSyncedTable(table, seed, enabled, onError) {
-  const [rows, setRows] = useState(seed);
+  const [rows, setRows] = useState([]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -1832,16 +1832,12 @@ function useSyncedTable(table, seed, enabled, onError) {
         onError?.(`Couldn't load ${table} (${error.message}). Your changes to it may not be visible or saved.`);
         return;
       }
-      if (data && data.length) {
-        setRows(data);
-      } else {
-        // First time this project is used — seed the live database with the starter data.
-        const { error: seedError } = await supabase.from(table).insert(seed);
-        if (seedError) {
-          console.error(`Failed to seed ${table}:`, seedError.message);
-          onError?.(`Couldn't set up ${table} (${seedError.message}).`);
-        }
-      }
+      // Reflect whatever the database actually has — including genuinely empty.
+      // (This used to auto-insert demo starter rows into an empty table, but that's
+      // not safe once the studio has real data: an empty table can also mean "all
+      // real rows for this table happen to be gone right now", and the demo rows
+      // reference made-up IDs that don't exist elsewhere in a live database.)
+      setRows(data || []);
 
       channel = supabase
         .channel(`${table}-changes`)
