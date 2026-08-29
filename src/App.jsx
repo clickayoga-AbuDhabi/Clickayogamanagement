@@ -329,10 +329,18 @@ function Dashboard({ trainers, customers, classes, payments }) {
   const scheduled = periodClasses.filter((c) => c.status === "scheduled").length;
   const revenue = periodPayments.reduce((s, p) => s + (p.amountPaid || 0), 0);
 
-  // Fee breakdown by package/note, for the selected period
+  // Fee breakdown by package structure (class type + class count), not the raw
+  // payment note — the note embeds each customer's own price, so grouping by it
+  // put almost every customer in their own bucket instead of grouping meaningfully.
+  const packageLabelFor = (customerId) => {
+    const c = customers.find((cu) => cu.id === customerId);
+    if (!c) return "Other";
+    if (c.unlimited) return `Unlimited monthly (${c.classType === "group" ? "group" : "private"})`;
+    return `${c.numberOfClasses ?? "—"} classes (${c.classType === "group" ? "group" : "private"})`;
+  };
   const feeMap = {};
   periodPayments.forEach((p) => {
-    const key = p.note?.trim() || "Other";
+    const key = packageLabelFor(p.customerId);
     feeMap[key] = (feeMap[key] || 0) + (p.amountPaid || 0);
   });
   const feeBreakdown = Object.entries(feeMap).sort((a, b) => b[1] - a[1]);
