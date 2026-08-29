@@ -285,6 +285,16 @@ function CommissionRing({ pct, size = 96 }) {
 // ---------- Tabs ----------
 
 function PeriodSelector({ mode, setMode, month, setMonth, startDate, setStartDate, endDate, setEndDate }) {
+  const setYTD = () => {
+    setMode("range");
+    setStartDate(`${new Date().getFullYear()}-01-01`);
+    setEndDate(todayISO());
+  };
+  const setAllTime = () => {
+    setMode("range");
+    setStartDate("2000-01-01");
+    setEndDate(todayISO());
+  };
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex bg-green-50 rounded-md p-1">
@@ -301,6 +311,12 @@ function PeriodSelector({ mode, setMode, month, setMonth, startDate, setStartDat
           Date range
         </button>
       </div>
+      <button onClick={setYTD} className="px-2.5 py-1.5 rounded-md text-xs text-green-700 border border-green-100 hover:bg-green-50">
+        YTD
+      </button>
+      <button onClick={setAllTime} className="px-2.5 py-1.5 rounded-md text-xs text-green-700 border border-green-100 hover:bg-green-50">
+        All time
+      </button>
       {mode === "month" ? (
         <input type="month" className={`${inputCls} w-auto`} value={month} onChange={(e) => setMonth(e.target.value)} />
       ) : (
