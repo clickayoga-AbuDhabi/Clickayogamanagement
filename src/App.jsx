@@ -430,7 +430,7 @@ function Dashboard({ trainers, customers, classes, payments }) {
   );
 }
 
-function Customers({ customers, setCustomers, insertCustomer, payments, setPayments }) {
+function Customers({ customers, setCustomers, insertCustomer, payments, setPayments, classes, setClasses }) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [source, setSource] = useState("new"); // "new" or "existing" — only relevant while adding
@@ -595,17 +595,22 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   };
 
   // Removing a customer line item also removes its generated payment, keeping the ledger clean.
+  // Removing a customer line item also removes its generated payment and cancels
+  // (deletes) any of their classes on the schedule — keeping the ledger clean.
   const removeCustomer = (id) => {
     setCustomers((cs) => cs.filter((c) => c.id !== id));
     setPayments((ps) => ps.filter((p) => p.customerId !== id));
+    setClasses((cls) => cls.filter((c) => c.customerId !== id));
   };
 
-  // Deletes every booking (and matching payment) for a person at once — used by the
-  // delete icon on the main list, since that row represents the whole person now.
+  // Deletes every booking (and matching payment, and any of their scheduled/completed
+  // classes) for a person at once — used by the delete icon on the main list, since
+  // that row represents the whole person now.
   const removePerson = (name) => {
     const idsToRemove = new Set(customers.filter((c) => c.name === name).map((c) => c.id));
     setCustomers((cs) => cs.filter((c) => c.name !== name));
     setPayments((ps) => ps.filter((p) => !idsToRemove.has(p.customerId)));
+    setClasses((cls) => cls.filter((c) => !idsToRemove.has(c.customerId)));
   };
 
   // Status (active/inactive/frozen) is a person-level attribute, but bookings are
@@ -2343,7 +2348,7 @@ export default function App() {
           {tab === "dashboard" && (
             <Dashboard trainers={trainers} customers={customers} classes={classes} payments={payments} />
           )}
-          {tab === "customers" && <Customers customers={customers} setCustomers={setCustomers} insertCustomer={insertCustomer} payments={payments} setPayments={setPayments} />}
+          {tab === "customers" && <Customers customers={customers} setCustomers={setCustomers} insertCustomer={insertCustomer} payments={payments} setPayments={setPayments} classes={classes} setClasses={setClasses} />}
           {tab === "packages" && <Packages packages={packages} setPackages={setPackages} />}
           {tab === "trainers" && <Trainers trainers={trainers} setTrainers={setTrainers} classes={classes} customers={customers} />}
           {tab === "schedule" && <Schedule classes={classes} setClasses={setClasses} trainers={trainers} customers={customers} setCustomers={setCustomers} />}
