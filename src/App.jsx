@@ -475,6 +475,9 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   const isFiltered = joinedFrom || joinedTo;
   const clearJoinedFilter = () => { setJoinedFrom(""); setJoinedTo(""); };
 
+  const [sortBy, setSortBy] = useState("name"); // name | location | nationality | status | bookings
+  const [sortDir, setSortDir] = useState("asc");
+
   // Groups every booking by a stable personId — not by name, since editing someone's
   // name must not make the app think it's a different person. Legacy rows saved
   // before personId existed fall back to grouping by name until they're touched again.
@@ -488,9 +491,19 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
     const hasUnlimited = bookings.some((b) => b.unlimited);
     return { key, bookings: sortedBookings, latest, totalRemaining, hasUnlimited, status: latest.status || "active" };
   });
+  const sortComparators = {
+    name: (a, b) => a.latest.name.localeCompare(b.latest.name),
+    location: (a, b) => (a.latest.location || "").localeCompare(b.latest.location || ""),
+    nationality: (a, b) => (a.latest.nationality || "").localeCompare(b.latest.nationality || ""),
+    status: (a, b) => a.status.localeCompare(b.status) || a.latest.name.localeCompare(b.latest.name),
+    bookings: (a, b) => a.bookings.length - b.bookings.length || a.latest.name.localeCompare(b.latest.name),
+  };
   const peopleFiltered = allPeople
     .filter((p) => !isFiltered || p.bookings.some((b) => (!joinedFrom || b.joined >= joinedFrom) && (!joinedTo || b.joined <= joinedTo)))
-    .sort((a, b) => a.latest.name.localeCompare(b.latest.name));
+    .sort((a, b) => {
+      const cmp = sortComparators[sortBy](a, b);
+      return sortDir === "asc" ? cmp : -cmp;
+    });
 
   // One entry per distinct person, using their most recent contact details — powers
   // the "existing customer" picker so a repeat booking doesn't need retyping.
@@ -750,6 +763,21 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
           </button>
         )}
         {isFiltered && <span className="text-xs text-green-600">({peopleFiltered.length} match{peopleFiltered.length === 1 ? "" : "es"})</span>}
+        <span className="text-xs text-green-600 ml-2">Sort by</span>
+        <select className={`${inputCls} w-auto`} value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+          <option value="name">Name</option>
+          <option value="location">Location</option>
+          <option value="nationality">Nationality</option>
+          <option value="status">Status</option>
+          <option value="bookings">Bookings</option>
+        </select>
+        <button
+          onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs text-green-700 border border-green-100 hover:bg-green-50"
+          title="Toggle sort order"
+        >
+          <ArrowUpDown size={13} /> {sortDir === "asc" ? "A–Z" : "Z–A"}
+        </button>
       </div>
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
