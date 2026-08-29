@@ -45,10 +45,10 @@ const seedPackages = [
 ];
 
 const seedCustomers = [
-  { id: "c1", name: "Fatima Al Marzooqi", phone: "050 123 4567", email: "fatima.marzooqi@gmail.com", location: "Al Reem Island, Abu Dhabi", classType: "private", unlimited: true, numberOfClasses: null, perClassPrice: 45, classesRemaining: "—", status: "active", joined: "2026-06-02" },
-  { id: "c2", name: "Sara Ibrahim", phone: "052 987 1234", email: "sara.ibrahim@gmail.com", location: "Khalifa City, Abu Dhabi", classType: "private", unlimited: false, numberOfClasses: 10, perClassPrice: 120, classesRemaining: 4, status: "active", joined: "2026-07-10" },
-  { id: "c3", name: "Layla Haddad", phone: "056 445 8890", email: "layla.haddad@gmail.com", location: "Corniche, Abu Dhabi", classType: "private", unlimited: false, numberOfClasses: 1, perClassPrice: 150, classesRemaining: 0, status: "inactive", joined: "2026-08-01" },
-  { id: "c4", name: "Noor Al Hashimi", phone: "054 221 7765", email: "noor.alhashimi@gmail.com", location: "Yas Island, Abu Dhabi", classType: "group", unlimited: false, numberOfClasses: 10, perClassPrice: 62.5, classesRemaining: 7, status: "active", joined: "2026-07-22" },
+  { id: "c1", personId: "pp1", name: "Fatima Al Marzooqi", phone: "050 123 4567", email: "fatima.marzooqi@gmail.com", location: "Al Reem Island, Abu Dhabi", nationality: "Emirati", classType: "private", unlimited: true, numberOfClasses: null, perClassPrice: 45, classesRemaining: "—", status: "active", joined: "2026-06-02" },
+  { id: "c2", personId: "pp2", name: "Sara Ibrahim", phone: "052 987 1234", email: "sara.ibrahim@gmail.com", location: "Khalifa City, Abu Dhabi", nationality: "Jordanian", classType: "private", unlimited: false, numberOfClasses: 10, perClassPrice: 120, classesRemaining: 4, status: "active", joined: "2026-07-10" },
+  { id: "c3", personId: "pp3", name: "Layla Haddad", phone: "056 445 8890", email: "layla.haddad@gmail.com", location: "Corniche, Abu Dhabi", nationality: "Lebanese", classType: "private", unlimited: false, numberOfClasses: 1, perClassPrice: 150, classesRemaining: 0, status: "inactive", joined: "2026-08-01" },
+  { id: "c4", personId: "pp4", name: "Noor Al Hashimi", phone: "054 221 7765", email: "noor.alhashimi@gmail.com", location: "Yas Island, Abu Dhabi", nationality: "Emirati", classType: "group", unlimited: false, numberOfClasses: 10, perClassPrice: 62.5, classesRemaining: 7, status: "active", joined: "2026-07-22" },
 ];
 
 const seedClasses = [
@@ -434,11 +434,12 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [source, setSource] = useState("new"); // "new" or "existing" — only relevant while adding
-  const [existingPersonKey, setExistingPersonKey] = useState("");
+  const [existingPersonKey, setExistingPersonKey] = useState(""); // a personId once picked
   const [lockedBooking, setLockedBooking] = useState(false); // true when opened via "New booking" — skips the new/existing picker
   const todayStr = new Date().toISOString().slice(0, 10);
   const blankForm = {
-    name: "", phone: "", email: "", location: "",
+    personId: null,
+    name: "", phone: "", email: "", location: "", nationality: "",
     joinDate: todayStr,
     status: "active",
     classType: "private",
@@ -462,17 +463,44 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   const grandTotal = subtotal + taxAmount;
   const pendingAmount = Math.max(0, grandTotal - (Number(form.amountPaid) || 0));
 
-  // One entry per distinct person (by name), using their most recent contact details —
-  // powers the "existing customer" picker so a repeat booking doesn't need retyping.
-  const people = {};
-  customers.forEach((c) => { people[c.name] = c; });
-  const uniquePeople = Object.values(people).sort((a, b) => a.name.localeCompare(b.name));
+  const [detailPerson, setDetailPerson] = useState(null); // a personId
 
-  const pickExistingPerson = (name) => {
-    setExistingPersonKey(name);
-    const p = people[name];
+  const [joinedFrom, setJoinedFrom] = useState("");
+  const [joinedTo, setJoinedTo] = useState("");
+
+  const sorted = [...customers]
+    .filter((c) => (!joinedFrom || c.joined >= joinedFrom) && (!joinedTo || c.joined <= joinedTo))
+    .sort((a, b) => a.name.localeCompare(b.name) || a.joined.localeCompare(b.joined));
+
+  const isFiltered = joinedFrom || joinedTo;
+  const clearJoinedFilter = () => { setJoinedFrom(""); setJoinedTo(""); };
+
+  // Groups every booking by a stable personId — not by name, since editing someone's
+  // name must not make the app think it's a different person. Legacy rows saved
+  // before personId existed fall back to grouping by name until they're touched again.
+  const personKey = (c) => c.personId || c.name;
+  const groupedByPerson = {};
+  customers.forEach((c) => { const k = personKey(c); (groupedByPerson[k] = groupedByPerson[k] || []).push(c); });
+  const allPeople = Object.entries(groupedByPerson).map(([key, bookings]) => {
+    const sortedBookings = [...bookings].sort((a, b) => b.joined.localeCompare(a.joined));
+    const latest = sortedBookings[0];
+    const totalRemaining = bookings.reduce((s, b) => s + (Number(b.classesRemaining) || 0), 0);
+    const hasUnlimited = bookings.some((b) => b.unlimited);
+    return { key, bookings: sortedBookings, latest, totalRemaining, hasUnlimited, status: latest.status || "active" };
+  });
+  const peopleFiltered = allPeople
+    .filter((p) => !isFiltered || p.bookings.some((b) => (!joinedFrom || b.joined >= joinedFrom) && (!joinedTo || b.joined <= joinedTo)))
+    .sort((a, b) => a.latest.name.localeCompare(b.latest.name));
+
+  // One entry per distinct person, using their most recent contact details — powers
+  // the "existing customer" picker so a repeat booking doesn't need retyping.
+  const uniquePeople = [...allPeople].sort((a, b) => a.latest.name.localeCompare(b.latest.name));
+
+  const pickExistingPerson = (key) => {
+    setExistingPersonKey(key);
+    const p = allPeople.find((pp) => pp.key === key);
     if (!p) return;
-    setForm({ ...form, name: p.name, phone: p.phone, email: p.email || "", location: p.location || "" });
+    setForm({ ...form, personId: p.latest.personId || p.key, name: p.latest.name, phone: p.latest.phone, email: p.latest.email || "", location: p.latest.location || "", nationality: p.latest.nationality || "" });
   };
 
   const startAdd = () => {
@@ -491,10 +519,12 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
     setLockedBooking(false);
     const existingPayment = payments.find((p) => p.customerId === c.id);
     setForm({
+      personId: c.personId || personKey(c),
       name: c.name,
       phone: c.phone,
       email: c.email || "",
       location: c.location || "",
+      nationality: c.nationality || "",
       joinDate: c.joined || todayStr,
       status: c.status || "active",
       classType: c.classType || "private",
@@ -513,13 +543,14 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
 
   // Pre-fills contact details from an existing customer but always saves as a brand-new
   // line item — for when the same person books another set of classes. Inherits their
-  // current status rather than resetting it.
+  // current status and personId rather than resetting them. Skips the "new/existing
+  // customer" picker entirely since the person is already known from context.
   const startNewBooking = (c) => {
     setEditingId(null);
     setLockedBooking(true);
     setSource("existing");
-    setExistingPersonKey(c.name);
-    setForm({ ...blankForm, name: c.name, phone: c.phone, email: c.email || "", location: c.location || "", status: c.status || "active" });
+    setExistingPersonKey(c.personId || personKey(c));
+    setForm({ ...blankForm, personId: c.personId || personKey(c), name: c.name, phone: c.phone, email: c.email || "", location: c.location || "", nationality: c.nationality || "", status: c.status || "active" });
     setOpen(true);
   };
 
@@ -537,15 +568,21 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
 
   // Saving a customer automatically generates (or updates) the matching payment record
   // from the classes/price/tax entered here — no separate "log payment" step needed.
+  // Editing contact details (name, phone, email, location, nationality) propagates to
+  // every one of that person's bookings, keeping their history consistent, while
+  // booking-specific fields (price, classes, etc.) only apply to the row being edited.
   const submit = async () => {
     if (!form.name) return;
     const storedPerClassPrice = form.unlimited ? (Number(form.priceInput) || 0) / UNLIMITED_ASSUMED_CLASSES : Number(form.priceInput) || 0;
     const freeClasses = form.unlimited ? 0 : Number(form.freeClasses) || 0;
-    const customerFields = {
+    const contactFields = {
       name: form.name,
       phone: form.phone,
       email: form.email,
       location: form.location,
+      nationality: form.nationality,
+    };
+    const bookingFields = {
       joined: form.joinDate || todayStr,
       status: form.status || "active",
       classType: form.classType,
@@ -561,6 +598,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
     const freeLabel = freeClasses > 0 ? ` + ${freeClasses} free` : "";
     const note = `${classesLabel} × ${priceLabel} (${form.classType})${freeLabel}`;
     const taxPercent = form.taxCharged ? Number(form.taxPercent) || 0 : 0;
+    const paymentDate = form.joinDate || todayStr;
     const paymentFields = {
       note,
       subtotal,
@@ -574,27 +612,35 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
     };
 
     if (editingId) {
-      setCustomers((cs) => cs.map((c) => (c.id === editingId ? { ...c, ...customerFields } : c)));
+      const original = customers.find((c) => c.id === editingId);
+      const personId = original?.personId || form.personId || uid("pp");
+      setCustomers((cs) =>
+        cs.map((c) => {
+          if (c.id === editingId) return { ...c, ...contactFields, ...bookingFields, personId };
+          if ((c.personId || personKey(c)) === personId) return { ...c, ...contactFields };
+          return c;
+        })
+      );
       setPayments((ps) => {
         const exists = ps.some((p) => p.customerId === editingId);
         if (exists) {
-          return ps.map((p) => (p.customerId === editingId ? { ...p, ...paymentFields } : p));
+          return ps.map((p) => (p.customerId === editingId ? { ...p, ...paymentFields, date: paymentDate } : p));
         }
-        return [...ps, { id: uid("p"), date: new Date().toISOString().slice(0, 10), customerId: editingId, ...paymentFields }];
+        return [...ps, { id: uid("p"), date: paymentDate, customerId: editingId, ...paymentFields }];
       });
     } else {
       // The payment references this customer by id (foreign key), so the customer
       // row must be confirmed saved before the payment is sent — otherwise the two
       // near-simultaneous saves can race and the payment gets rejected.
+      const personId = form.personId || uid("pp");
       const newId = uid("c");
-      await insertCustomer({ id: newId, ...customerFields });
-      setPayments((ps) => [...ps, { id: uid("p"), date: new Date().toISOString().slice(0, 10), customerId: newId, ...paymentFields }]);
+      await insertCustomer({ id: newId, personId, ...contactFields, ...bookingFields });
+      setPayments((ps) => [...ps, { id: uid("p"), date: paymentDate, customerId: newId, ...paymentFields }]);
     }
     setForm(blankForm);
     setOpen(false);
   };
 
-  // Removing a customer line item also removes its generated payment, keeping the ledger clean.
   // Removing a customer line item also removes its generated payment and cancels
   // (deletes) any of their classes on the schedule — keeping the ledger clean.
   const removeCustomer = (id) => {
@@ -606,47 +652,19 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   // Deletes every booking (and matching payment, and any of their scheduled/completed
   // classes) for a person at once — used by the delete icon on the main list, since
   // that row represents the whole person now.
-  const removePerson = (name) => {
-    const idsToRemove = new Set(customers.filter((c) => c.name === name).map((c) => c.id));
-    setCustomers((cs) => cs.filter((c) => c.name !== name));
+  const removePerson = (key) => {
+    const idsToRemove = new Set(customers.filter((c) => personKey(c) === key).map((c) => c.id));
+    setCustomers((cs) => cs.filter((c) => personKey(c) !== key));
     setPayments((ps) => ps.filter((p) => !idsToRemove.has(p.customerId)));
     setClasses((cls) => cls.filter((c) => !idsToRemove.has(c.customerId)));
   };
 
   // Status (active/inactive/frozen) is a person-level attribute, but bookings are
   // stored per line item — so it's kept in sync across every booking that shares
-  // this person's name whenever it's changed from the detail view.
-  const updatePersonStatus = (name, status) => {
-    setCustomers((cs) => cs.map((c) => (c.name === name ? { ...c, status } : c)));
+  // this person's personId whenever it's changed from the detail view.
+  const updatePersonStatus = (key, status) => {
+    setCustomers((cs) => cs.map((c) => (personKey(c) === key ? { ...c, status } : c)));
   };
-
-  const [detailPerson, setDetailPerson] = useState(null);
-
-  const [joinedFrom, setJoinedFrom] = useState("");
-  const [joinedTo, setJoinedTo] = useState("");
-
-  const sorted = [...customers]
-    .filter((c) => (!joinedFrom || c.joined >= joinedFrom) && (!joinedTo || c.joined <= joinedTo))
-    .sort((a, b) => a.name.localeCompare(b.name) || a.joined.localeCompare(b.joined));
-
-  const isFiltered = joinedFrom || joinedTo;
-  const clearJoinedFilter = () => { setJoinedFrom(""); setJoinedTo(""); };
-
-  // Groups every booking by person (name) — each person is one row in the main
-  // table; adding a new booking for an existing person nests under them instead
-  // of appearing as a separate top-level row.
-  const groupedByName = {};
-  customers.forEach((c) => { (groupedByName[c.name] = groupedByName[c.name] || []).push(c); });
-  const allPeople = Object.entries(groupedByName).map(([name, bookings]) => {
-    const sortedBookings = [...bookings].sort((a, b) => b.joined.localeCompare(a.joined));
-    const latest = sortedBookings[0];
-    const totalRemaining = bookings.reduce((s, b) => s + (Number(b.classesRemaining) || 0), 0);
-    const hasUnlimited = bookings.some((b) => b.unlimited);
-    return { name, bookings: sortedBookings, latest, totalRemaining, hasUnlimited, status: latest.status || "active" };
-  });
-  const peopleFiltered = allPeople
-    .filter((p) => !isFiltered || p.bookings.some((b) => (!joinedFrom || b.joined >= joinedFrom) && (!joinedTo || b.joined <= joinedTo)))
-    .sort((a, b) => a.name.localeCompare(b.name));
 
   const statusBadgeClass = (status) => {
     if (status === "frozen") return "bg-blue-50 text-blue-600";
@@ -658,12 +676,13 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   const exportCustomersCSV = () => {
     downloadCSV(
       `click-a-yoga-customers-${new Date().toISOString().slice(0, 10)}.csv`,
-      ["Name", "Phone", "Email", "Location", "Class Type", "Classes", "Free Classes", "Per-Class Price", "Classes Remaining", "Joined"],
+      ["Name", "Phone", "Email", "Location", "Nationality", "Class Type", "Classes", "Free Classes", "Per-Class Price", "Classes Remaining", "Joined"],
       sorted.map((c) => [
         c.name,
         c.phone,
         c.email || "",
         c.location || "",
+        c.nationality || "",
         c.classType === "group" ? "Group" : "Private",
         c.unlimited ? "Unlimited" : c.numberOfClasses,
         c.freeClasses || 0,
@@ -734,13 +753,14 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
       </div>
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[920px]">
+        <table className="w-full text-sm min-w-[980px]">
           <thead className="bg-green-50 text-green-700 text-xs uppercase tracking-wide">
             <tr>
               <th className="text-left px-4 py-3">Name</th>
               <th className="text-left px-4 py-3">Phone</th>
               <th className="text-left px-4 py-3">Email</th>
               <th className="text-left px-4 py-3">Location</th>
+              <th className="text-left px-4 py-3">Nationality</th>
               <th className="text-left px-4 py-3">Status</th>
               <th className="text-left px-4 py-3">Bookings</th>
               <th className="text-left px-4 py-3">Total remaining</th>
@@ -749,15 +769,16 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
           </thead>
           <tbody>
             {peopleFiltered.map((p) => (
-              <tr key={p.name} className="border-t border-gray-100">
+              <tr key={p.key} className="border-t border-gray-100">
                 <td className="px-4 py-3 whitespace-nowrap">
-                  <button onClick={() => setDetailPerson(p.name)} className="text-green-900 font-medium hover:underline">
-                    {p.name}
+                  <button onClick={() => setDetailPerson(p.key)} className="text-green-900 font-medium hover:underline">
+                    {p.latest.name}
                   </button>
                 </td>
                 <td className="px-4 py-3 text-green-700 whitespace-nowrap"><span className="flex items-center gap-1"><Phone size={12} />{p.latest.phone}</span></td>
                 <td className="px-4 py-3 text-green-700 whitespace-nowrap">{p.latest.email || "—"}</td>
                 <td className="px-4 py-3 text-green-700 whitespace-nowrap">{p.latest.location || "—"}</td>
+                <td className="px-4 py-3 text-green-700 whitespace-nowrap">{p.latest.nationality || "—"}</td>
                 <td className="px-4 py-3">
                   <span className={`text-xs px-2 py-1 rounded-full ${statusBadgeClass(p.status)}`}>{statusLabel(p.status)}</span>
                 </td>
@@ -768,7 +789,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
                     <button onClick={() => startNewBooking(p.latest)} className="text-green-500 hover:text-green-700" title="New booking for this customer">
                       <RefreshCw size={15} />
                     </button>
-                    <button onClick={() => removePerson(p.name)} className="text-green-600 hover:text-red-500" title="Delete this customer and all their bookings">
+                    <button onClick={() => removePerson(p.key)} className="text-green-600 hover:text-red-500" title="Delete this customer and all their bookings">
                       <Trash2 size={15} />
                     </button>
                   </div>
@@ -807,7 +828,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
               <select className={inputCls} value={existingPersonKey} onChange={(e) => pickExistingPerson(e.target.value)}>
                 <option value="" disabled>Choose a customer…</option>
                 {uniquePeople.map((p) => (
-                  <option key={p.name} value={p.name}>{p.name} — {p.phone}</option>
+                  <option key={p.key} value={p.key}>{p.latest.name} — {p.latest.phone}</option>
                 ))}
               </select>
             </Field>
@@ -846,6 +867,15 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
               disabled={!editingId && source === "existing"}
               onChange={(e) => setForm({ ...form, location: e.target.value })}
               placeholder="e.g. Al Reem Island, Abu Dhabi"
+            />
+          </Field>
+          <Field label="Nationality">
+            <input
+              className={inputCls}
+              value={form.nationality}
+              disabled={!editingId && source === "existing"}
+              onChange={(e) => setForm({ ...form, nationality: e.target.value })}
+              placeholder="e.g. Emirati, Indian, British"
             />
           </Field>
           <Field label="Joining date">
@@ -938,6 +968,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
             <span>Pending amount</span>
             <span className="font-medium">{AED(pendingAmount)}</span>
           </div>
+          <div className="text-[11px] text-green-600 mb-3">Payment date defaults to the joining date above ({form.joinDate}).</div>
 
           <button onClick={submit} className="w-full bg-green-500 text-white rounded-md py-2 text-sm mt-2 hover:bg-green-600">
             {editingId ? "Save changes" : "Save customer"}
@@ -946,7 +977,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
       )}
 
       {detailPerson && (() => {
-        const person = allPeople.find((p) => p.name === detailPerson);
+        const person = allPeople.find((p) => p.key === detailPerson);
         if (!person) return null;
         const bookingIds = new Set(person.bookings.map((b) => b.id));
         const personPayments = payments.filter((p) => bookingIds.has(p.customerId)).sort((a, b) => b.date.localeCompare(a.date));
@@ -965,15 +996,16 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
         };
 
         return (
-          <Modal title={person.name} onClose={() => setDetailPerson(null)} wide>
+          <Modal title={person.latest.name} onClose={() => setDetailPerson(null)} wide>
             <div className="mb-4 space-y-1 text-sm text-green-700">
               <div className="flex items-center gap-1"><Phone size={12} />{person.latest.phone}</div>
               {person.latest.email && <div>{person.latest.email}</div>}
               {person.latest.location && <div className="flex items-center gap-1"><MapPin size={12} />{person.latest.location}</div>}
+              {person.latest.nationality && <div>{person.latest.nationality}</div>}
             </div>
 
             <Field label="Status">
-              <select className={inputCls} value={person.status} onChange={(e) => updatePersonStatus(person.name, e.target.value)}>
+              <select className={inputCls} value={person.status} onChange={(e) => updatePersonStatus(person.key, e.target.value)}>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
                 <option value="frozen">Frozen</option>
