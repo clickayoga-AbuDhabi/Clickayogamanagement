@@ -1805,39 +1805,50 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers }) {
               <ChevronRight size={18} />
             </button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-7 gap-2">
-            {weekDates.map((dateStr) => {
-              const dayClasses = classesByDate[dateStr] || [];
-              const dayLabel = new Date(`${dateStr}T00:00:00`).toLocaleString("en-US", { weekday: "short", day: "numeric" });
-              return (
-                <div key={dateStr} className="rounded-md border border-gray-100 p-2 min-h-[160px] flex flex-col">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-medium text-green-900">{dayLabel}</span>
-                    <button onClick={() => startAdd(dateStr)} className="text-green-600 hover:text-green-700" title="Add class on this day">
-                      <Plus size={13} />
-                    </button>
-                  </div>
-                  <div className="space-y-1 overflow-y-auto">
-                    {dayClasses.length === 0 && <div className="text-[11px] text-green-600/60">No classes</div>}
-                    {dayClasses.map((c) => (
-                      <button
-                        key={c.id}
-                        onClick={() => startEdit(c)}
-                        className={`w-full text-left text-[11px] leading-tight px-1.5 py-1 rounded ${
-                          c.status === "completed" ? "bg-green-100 text-green-700" : "bg-green-50 text-green-700"
-                        }`}
-                        title={`${nameOf(trainers, c.trainerId)} · ${nameOf(customers, c.customerId)} · ${locationOf(c.customerId)}`}
-                      >
-                        <div className="font-medium">{c.time} {firstName(nameOf(trainers, c.trainerId))}</div>
-                        <div className="truncate">{nameOf(customers, c.customerId)}</div>
-                        <div className="truncate opacity-70">{locationOf(c.customerId)}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse min-w-[820px]">
+              <thead>
+                <tr>
+                  <th className="text-xs text-green-600 font-medium text-left px-2 py-2 w-16"></th>
+                  {weekDates.map((dateStr) => (
+                    <th key={dateStr} className="text-xs text-green-700 font-medium px-2 py-2 text-center border-l border-gray-100 whitespace-nowrap">
+                      {new Date(`${dateStr}T00:00:00`).toLocaleString("en-US", { weekday: "short", day: "numeric" })}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: 16 }, (_, i) => 6 + i).map((hour) => (
+                  <tr key={hour} className="border-t border-gray-100">
+                    <td className="text-xs text-green-600 px-2 py-1.5 align-top whitespace-nowrap">{String(hour).padStart(2, "0")}:00</td>
+                    {weekDates.map((dateStr) => {
+                      const hourClasses = (classesByDate[dateStr] || []).filter((c) => Number(c.time.split(":")[0]) === hour);
+                      return (
+                        <td key={dateStr} className="border-l border-gray-100 px-1 py-1 align-top min-w-[100px]">
+                          <div className="space-y-1">
+                            {hourClasses.map((c) => (
+                              <button
+                                key={c.id}
+                                onClick={() => startEdit(c)}
+                                className={`w-full text-left text-[10px] leading-tight px-1.5 py-1 rounded ${
+                                  c.status === "completed" ? "bg-green-100 text-green-700" : "bg-green-50 text-green-700"
+                                }`}
+                                title={`${nameOf(trainers, c.trainerId)} · ${nameOf(customers, c.customerId)} · ${locationOf(c.customerId)}`}
+                              >
+                                <div className="font-medium">{c.time} {firstName(nameOf(trainers, c.trainerId))}</div>
+                                <div className="truncate">{nameOf(customers, c.customerId)}</div>
+                              </button>
+                            ))}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
+          <p className="text-xs text-green-600 mt-4">Blank cells are available hours; filled cells show booked sessions. Tap a session to edit it.</p>
         </Card>
       )}
 
