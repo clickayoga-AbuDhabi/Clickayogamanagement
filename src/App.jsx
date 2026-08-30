@@ -522,8 +522,11 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
     status: (a, b) => a.status.localeCompare(b.status) || a.latest.name.localeCompare(b.latest.name),
     bookings: (a, b) => a.bookings.length - b.bookings.length || a.latest.name.localeCompare(b.latest.name),
   };
+  const [nameSearch, setNameSearch] = useState("");
+
   const peopleFiltered = allPeople
     .filter((p) => !isFiltered || p.bookings.some((b) => (!joinedFrom || b.joined >= joinedFrom) && (!joinedTo || b.joined <= joinedTo)))
+    .filter((p) => !nameSearch.trim() || p.latest.name.toLowerCase().includes(nameSearch.trim().toLowerCase()))
     .sort((a, b) => {
       const cmp = sortComparators[sortBy](a, b);
       return sortDir === "asc" ? cmp : -cmp;
@@ -777,6 +780,16 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
         }
       />
       <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="relative">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-green-500" />
+          <input
+            type="text"
+            value={nameSearch}
+            onChange={(e) => setNameSearch(e.target.value)}
+            placeholder="Search by customer name…"
+            className={`${inputCls} w-auto pl-8`}
+          />
+        </div>
         <span className="text-xs text-green-600">Joined between</span>
         <input type="date" className={`${inputCls} w-auto`} value={joinedFrom} onChange={(e) => setJoinedFrom(e.target.value)} />
         <span className="text-xs text-green-600">and</span>
@@ -786,7 +799,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
             <X size={12} /> Clear
           </button>
         )}
-        {isFiltered && <span className="text-xs text-green-600">({peopleFiltered.length} match{peopleFiltered.length === 1 ? "" : "es"})</span>}
+        {(isFiltered || nameSearch) && <span className="text-xs text-green-600">({peopleFiltered.length} match{peopleFiltered.length === 1 ? "" : "es"})</span>}
         <span className="text-xs text-green-600 ml-2">Sort by</span>
         <select className={`${inputCls} w-auto`} value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
           <option value="name">Name</option>
@@ -804,9 +817,9 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
         </button>
       </div>
       <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-auto" style={{ maxHeight: "420px" }}>
         <table className="w-full text-sm min-w-[980px]">
-          <thead className="bg-green-50 text-green-700 text-xs uppercase tracking-wide">
+          <thead className="bg-green-50 text-green-700 text-xs uppercase tracking-wide sticky top-0 z-10">
             <tr>
               <th className="text-left px-4 py-3">Name</th>
               <th className="text-left px-4 py-3">Phone</th>
@@ -1155,9 +1168,9 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
           }
         />
         <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-auto" style={{ maxHeight: "360px" }}>
           <table className="w-full text-sm min-w-[860px]">
-            <thead className="bg-green-50 text-green-700 text-xs uppercase tracking-wide">
+            <thead className="bg-green-50 text-green-700 text-xs uppercase tracking-wide sticky top-0 z-10">
               <tr>
                 <th className="text-left px-4 py-3">Customer</th>
                 <th className="text-left px-4 py-3">Note</th>
