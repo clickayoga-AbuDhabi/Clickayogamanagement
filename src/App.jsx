@@ -1199,7 +1199,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
 function Trainers({ trainers, setTrainers, classes, customers }) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const blankForm = { name: "", cred: "", baseSalary: 2000, commissionRate: 0.2, monthlyTarget: 130 };
+  const blankForm = { name: "", cred: "", baseSalary: 2000, commissionRate: 0.2, monthlyTarget: 130, authEmail: "" };
   const [form, setForm] = useState(blankForm);
   const [detailTrainerId, setDetailTrainerId] = useState(null);
 
@@ -1211,7 +1211,7 @@ function Trainers({ trainers, setTrainers, classes, customers }) {
 
   const startEdit = (t) => {
     setEditingId(t.id);
-    setForm({ name: t.name, cred: t.cred, baseSalary: t.baseSalary, commissionRate: t.commissionRate, monthlyTarget: t.monthlyTarget });
+    setForm({ name: t.name, cred: t.cred, baseSalary: t.baseSalary, commissionRate: t.commissionRate, monthlyTarget: t.monthlyTarget, authEmail: t.authEmail || "" });
     setOpen(true);
   };
 
@@ -1262,6 +1262,13 @@ function Trainers({ trainers, setTrainers, classes, customers }) {
               <span>Monthly target</span><span className="text-green-900">{t.monthlyTarget} classes</span>
             </div>
             <div className="text-[11px] text-green-600 mt-2">Group classes always pay a flat 10%, regardless of volume.</div>
+            {t.authEmail ? (
+              <div className="flex items-center gap-1 text-[11px] text-green-700 mt-2">
+                <UserRound size={11} /> Portal access: {t.authEmail}
+              </div>
+            ) : (
+              <div className="text-[11px] text-green-500 mt-2">No portal login set up</div>
+            )}
           </Card>
         ))}
       </div>
@@ -1329,6 +1336,18 @@ function Trainers({ trainers, setTrainers, classes, customers }) {
           <Field label="Monthly target (classes)">
             <input type="number" className={inputCls} value={form.monthlyTarget} onChange={(e) => setForm({ ...form, monthlyTarget: Number(e.target.value) })} />
           </Field>
+          <Field label="Portal login email (optional)">
+            <input
+              type="email"
+              className={inputCls}
+              value={form.authEmail}
+              onChange={(e) => setForm({ ...form, authEmail: e.target.value })}
+              placeholder="trainer@example.com"
+            />
+          </Field>
+          <p className="text-[11px] text-green-600 mb-3">
+            If set, this trainer can sign in with this email (create the account in Supabase → Authentication → Users) and will see only their own schedule — no customers, payments, or other trainers' data.
+          </p>
           <button onClick={submit} className="w-full bg-green-500 text-white rounded-md py-2 text-sm mt-2 hover:bg-green-600">
             {editingId ? "Save changes" : "Save trainer"}
           </button>
@@ -2352,6 +2371,117 @@ function LoginScreen() {
   );
 }
 
+// ---------- Trainer portal (restricted view for trainer logins) ----------
+// Shown instead of the full app when the signed-in email matches a trainer's
+// portal login. Deliberately has no access to customers, payments, packages,
+// other trainers, or commission figures — schedule only, and only their own.
+
+function TrainerPortal({ trainer, classes, setClasses, customers, userEmail }) {
+  const [sortDir, setSortDir] = useState("asc");
+
+  const myClasses = classes.filter((c) => c.trainerId === trainer.id);
+  const nameOf = (id) => customers.find((c) => c.id === id)?.name || "—";
+  const locationOf = (id) => customers.find((c) => c.id === id)?.location || "—";
+
+  // Defensively re-checks trainerId even though the UI only ever shows their own
+  // sessions — a class can only ever be toggled if it's genuinely this trainer's.
+  const toggleComplete = (id) => {
+    setClasses((cs) =>
+      cs.map((c) => {
+        if (c.id !== id || c.trainerId !== trainer.id) return c;
+        if (c.status !== "completed" && c.date > todayISO()) return c;
+        return { ...c, status: c.status === "completed" ? "scheduled" : "completed" };
+      })
+    );
+  };
+
+  const sorted = [...myClasses].sort((a, b) => {
+    const cmp = (a.date + a.time).localeCompare(b.date + b.time);
+    return sortDir === "asc" ? cmp : -cmp;
+  });
+  const upcoming = sorted.filter((c) => c.status !== "completed");
+  const completed = [...sorted].reverse().filter((c) => c.status === "completed");
+
+  return (
+    <div className="min-h-screen bg-white">
+      <div className="border-b border-green-100 px-6 py-5 flex items-center justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-green-500 mb-1">
+            <Sparkles size={16} />
+            <span className="text-xs tracking-[0.25em] uppercase">Trainer Portal</span>
+          </div>
+          <h1 className="font-serif text-xl text-green-900">{trainer.name}</h1>
+          <div className="text-xs text-green-600">{userEmail}</div>
+        </div>
+        <button onClick={() => supabase.auth.signOut()} className="text-xs text-green-600 hover:text-green-900 underline shrink-0">
+          Sign out
+        </button>
+      </div>
+
+      <div className="p-6 max-w-2xl mx-auto">
+        <SectionTitle
+          eyebrow="Your schedule"
+          title="Upcoming sessions"
+          action={
+            <button
+              onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+              className="flex items-center gap-1 text-xs text-green-700 border border-green-100 rounded-md px-2.5 py-1.5 hover:bg-green-50"
+            >
+              <ArrowUpDown size={13} /> {sortDir === "asc" ? "Soonest first" : "Latest first"}
+            </button>
+          }
+        />
+        <div className="space-y-2 mb-8">
+          {upcoming.length === 0 && <div className="text-sm text-green-600">No upcoming sessions.</div>}
+          {upcoming.map((c) => {
+            const isFuture = c.date > todayISO();
+            return (
+              <Card key={c.id} className="p-4 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-green-900">{c.date} · {c.time}</div>
+                  <div className="text-sm text-green-700">{nameOf(c.customerId)}</div>
+                  <div className="text-xs text-green-600 flex items-center gap-1 mt-0.5">
+                    <MapPin size={11} /> {locationOf(c.customerId)}
+                  </div>
+                </div>
+                <button
+                  onClick={() => toggleComplete(c.id)}
+                  disabled={isFuture}
+                  className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-md shrink-0 ${
+                    isFuture ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-green-700 text-white hover:bg-green-800"
+                  }`}
+                  title={isFuture ? "Can't mark a future class as completed" : "Mark as completed"}
+                >
+                  <Check size={14} /> Mark complete
+                </button>
+              </Card>
+            );
+          })}
+        </div>
+
+        <SectionTitle eyebrow="History" title="Completed sessions" />
+        <div className="space-y-2">
+          {completed.length === 0 && <div className="text-sm text-green-600">No completed sessions yet.</div>}
+          {completed.map((c) => (
+            <Card key={c.id} className="p-4 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium text-green-900">{c.date} · {c.time}</div>
+                <div className="text-sm text-green-700">{nameOf(c.customerId)}</div>
+              </div>
+              <button
+                onClick={() => toggleComplete(c.id)}
+                className="text-xs px-3 py-2 rounded-md border border-green-100 text-green-700 hover:bg-green-50 shrink-0"
+              >
+                Undo
+              </button>
+            </Card>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- App ----------
 
 export default function App() {
@@ -2408,6 +2538,15 @@ export default function App() {
   }
   if (!session) {
     return <LoginScreen />;
+  }
+
+  // If this signed-in email matches a trainer's portal login, show the restricted
+  // trainer view instead of the full app — no other tab, no financial data.
+  const myTrainer = trainers.find(
+    (t) => t.authEmail && t.authEmail.trim().toLowerCase() === (session.user?.email || "").toLowerCase()
+  );
+  if (myTrainer) {
+    return <TrainerPortal trainer={myTrainer} classes={classes} setClasses={setClasses} customers={customers} userEmail={session.user.email} />;
   }
 
   return (
