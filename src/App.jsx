@@ -454,7 +454,7 @@ function Dashboard({ trainers, customers, classes, payments }) {
   );
 }
 
-function Customers({ customers, setCustomers, insertCustomer, payments, setPayments, classes, setClasses }) {
+function Customers({ customers, setCustomers, insertCustomer, payments, setPayments, classes, setClasses, onBookCustomer }) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [source, setSource] = useState("new"); // "new" or "existing" — only relevant while adding
@@ -1059,6 +1059,10 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
           setDetailPerson(null);
           startNewBooking(person.latest);
         };
+        const bookClass = () => {
+          setDetailPerson(null);
+          onBookCustomer?.(person.latest.id);
+        };
 
         return (
           <Modal title={person.latest.name} onClose={() => setDetailPerson(null)} wide>
@@ -1079,9 +1083,14 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
 
             <div className="flex items-center justify-between mt-5 mb-2">
               <h4 className="font-medium text-green-900 text-sm">Booking history</h4>
-              <button onClick={addBooking} className="flex items-center gap-1 text-xs bg-green-700 text-white px-2.5 py-1.5 rounded-md hover:bg-green-800">
-                <Plus size={12} /> New booking
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={bookClass} className="flex items-center gap-1 text-xs bg-green-700 text-white px-2.5 py-1.5 rounded-md hover:bg-green-800">
+                  <CalendarDays size={12} /> Book a class
+                </button>
+                <button onClick={addBooking} className="flex items-center gap-1 text-xs text-green-700 border border-green-100 px-2.5 py-1.5 rounded-md hover:bg-green-50">
+                  <Plus size={12} /> New booking
+                </button>
+              </div>
             </div>
             <div className="overflow-x-auto mb-6 border border-gray-100 rounded-md">
               <table className="w-full text-sm min-w-[520px]">
@@ -1484,10 +1493,12 @@ function Packages({ packages, setPackages }) {
   );
 }
 
-function Schedule({ classes, setClasses, trainers, customers, setCustomers }) {
+function Schedule({ classes, setClasses, trainers, customers, setCustomers, prefillCustomerId, onPrefillConsumed }) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const blankForm = { date: todayISO(), time: "07:00", trainerId: trainers[0]?.id, customerId: customers[0]?.id };
+  const activeCustomers = customers.filter((c) => (c.status || "active") === "active");
+  const defaultCustomerId = activeCustomers[0]?.id || customers[0]?.id;
+  const blankForm = { date: todayISO(), time: "07:00", trainerId: trainers[0]?.id, customerId: defaultCustomerId };
   const [form, setForm] = useState(blankForm);
   const [view, setView] = useState("list");
   const [sortDir, setSortDir] = useState("asc");
@@ -1495,10 +1506,23 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers }) {
   const [weekStart, setWeekStart] = useState(mondayOfThisWeekISO());
   const [dayDate, setDayDate] = useState(todayISO());
   const [customerFilter, setCustomerFilter] = useState("");
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
 
   const nameOf = (list, id) => list.find((x) => x.id === id)?.name || "—";
   const locationOf = (customerId) => customers.find((c) => c.id === customerId)?.location || "—";
   const firstName = (name) => name.replace(/^Dr\.\s*/i, "").split(" ")[0];
+
+  // The customer picker only offers active customers, but if editing (or a prefilled
+  // booking) points at a now-inactive one, that one stays selectable too so the
+  // current assignment always displays correctly.
+  const selectableCustomers = customers.filter(
+    (c) => (c.status || "active") === "active" || c.id === form.customerId
+  );
+  const pickerLabel = (c) => `${c.name} — ${c.classesRemaining === "—" ? "Unlimited" : `${c.classesRemaining} left`}`;
+  const filteredCustomerOptions = customerSearch.trim()
+    ? selectableCustomers.filter((c) => c.name.toLowerCase().includes(customerSearch.trim().toLowerCase()))
+    : selectableCustomers;
 
   const filteredClasses = customerFilter.trim()
     ? classes.filter((c) => nameOf(customers, c.customerId).toLowerCase().includes(customerFilter.trim().toLowerCase()))
@@ -1517,15 +1541,30 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers }) {
 
   const startAdd = (presetDate) => {
     setEditingId(null);
-    setForm(presetDate ? { ...blankForm, date: presetDate } : blankForm);
+    const next = presetDate ? { ...blankForm, date: presetDate } : blankForm;
+    setForm(next);
+    setCustomerSearch(nameOf(customers, next.customerId));
     setOpen(true);
   };
 
   const startEdit = (c) => {
     setEditingId(c.id);
     setForm({ date: c.date, time: c.time, trainerId: c.trainerId, customerId: c.customerId });
+    setCustomerSearch(nameOf(customers, c.customerId));
     setOpen(true);
   };
+
+  // Opened from a customer's detail view via "Book a class" — jumps here already
+  // pointed at that specific customer/booking.
+  useEffect(() => {
+    if (!prefillCustomerId) return;
+    setEditingId(null);
+    setForm({ ...blankForm, customerId: prefillCustomerId });
+    setCustomerSearch(nameOf(customers, prefillCustomerId));
+    setOpen(true);
+    onPrefillConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillCustomerId]);
 
   // ----- Booking guards -----
   // A trainer can't be double-booked at the same date/time (excluding the session
@@ -1953,12 +1992,42 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers }) {
               <AlertTriangle size={13} /> This trainer already has a session at this date and time.
             </div>
           )}
-          <Field label="Customer">
-            <select className={inputCls} value={form.customerId} onChange={(e) => setForm({ ...form, customerId: e.target.value })}>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>{c.name} — {c.classesRemaining === "—" ? "unlimited" : `${c.classesRemaining} left`}</option>
-              ))}
-            </select>
+          <Field label="Customer (active only)">
+            <div className="relative">
+              <input
+                type="text"
+                className={inputCls}
+                value={customerSearch}
+                onFocus={() => setCustomerPickerOpen(true)}
+                onChange={(e) => {
+                  setCustomerSearch(e.target.value);
+                  setCustomerPickerOpen(true);
+                }}
+                onBlur={() => setTimeout(() => setCustomerPickerOpen(false), 150)}
+                placeholder="Type to search customers…"
+              />
+              {customerPickerOpen && (
+                <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-green-100 rounded-md shadow-lg">
+                  {filteredCustomerOptions.length === 0 && (
+                    <div className="px-3 py-2 text-xs text-green-600">No matching active customers.</div>
+                  )}
+                  {filteredCustomerOptions.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onMouseDown={() => {
+                        setForm({ ...form, customerId: c.id });
+                        setCustomerSearch(c.name);
+                        setCustomerPickerOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-green-50 ${c.id === form.customerId ? "bg-green-50 text-green-900 font-medium" : "text-green-700"}`}
+                    >
+                      {pickerLabel(c)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </Field>
           {(() => {
             const selectedCustomer = customers.find((c) => c.id === form.customerId);
@@ -2499,6 +2568,11 @@ function TrainerPortal({ trainer, classes, setClasses, customers, userEmail }) {
 
 export default function App() {
   const [tab, setTab] = useState("dashboard");
+  const [bookingForCustomerId, setBookingForCustomerId] = useState(null);
+  const bookCustomer = (customerId) => {
+    setBookingForCustomerId(customerId);
+    setTab("schedule");
+  };
   const [session, setSession] = useState(undefined); // undefined = still checking, null = signed out
   const [authTimedOut, setAuthTimedOut] = useState(false);
 
@@ -2595,10 +2669,20 @@ export default function App() {
           {tab === "dashboard" && (
             <Dashboard trainers={trainers} customers={customers} classes={classes} payments={payments} />
           )}
-          {tab === "customers" && <Customers customers={customers} setCustomers={setCustomers} insertCustomer={insertCustomer} payments={payments} setPayments={setPayments} classes={classes} setClasses={setClasses} />}
+          {tab === "customers" && <Customers customers={customers} setCustomers={setCustomers} insertCustomer={insertCustomer} payments={payments} setPayments={setPayments} classes={classes} setClasses={setClasses} onBookCustomer={bookCustomer} />}
           {tab === "packages" && <Packages packages={packages} setPackages={setPackages} />}
           {tab === "trainers" && <Trainers trainers={trainers} setTrainers={setTrainers} classes={classes} customers={customers} />}
-          {tab === "schedule" && <Schedule classes={classes} setClasses={setClasses} trainers={trainers} customers={customers} setCustomers={setCustomers} />}
+          {tab === "schedule" && (
+            <Schedule
+              classes={classes}
+              setClasses={setClasses}
+              trainers={trainers}
+              customers={customers}
+              setCustomers={setCustomers}
+              prefillCustomerId={bookingForCustomerId}
+              onPrefillConsumed={() => setBookingForCustomerId(null)}
+            />
+          )}
           {tab === "utilization" && <Utilization trainers={trainers} classes={classes} customers={customers} />}
           {tab === "commission" && <CommissionTab trainers={trainers} classes={classes} customers={customers} />}
         </div>
