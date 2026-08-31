@@ -12,7 +12,6 @@ import {
   Phone,
   Wallet,
   Sparkles,
-  Package as PackageIcon,
   Pencil,
   Trash2,
   Activity,
@@ -26,6 +25,7 @@ import {
   MapPin,
   Search,
   AlertTriangle,
+  Receipt,
 } from "lucide-react";
 
 // ---------- Seed data (Click A Yoga, Abu Dhabi) ----------
@@ -35,13 +35,156 @@ const seedTrainers = [
   { id: "t2", name: "Dr. Akshatha", cred: "BNYS Naturopathy Doctor", baseSalary: 2000, commissionRate: 0.2, monthlyTarget: 130 },
 ];
 
-const seedPackages = [
-  { id: "pk1", name: "Drop-in", classes: 1, price: 150, type: "private" },
-  { id: "pk2", name: "5-Class Pack", classes: 5, price: 650, type: "private" },
-  { id: "pk3", name: "10-Class Pack", classes: 10, price: 1200, type: "private" },
-  { id: "pk4", name: "20-Class Pack", classes: 20, price: 2200, type: "private" },
-  { id: "pk5", name: "Monthly Unlimited", classes: null, price: 900, type: "private" },
-  { id: "pk6", name: "Group Classes", classes: 8, price: 500, type: "group" },
+const seedExpenses = [
+  { id: "e1", date: "2025-06-16", category: "Website", vendor: "", description: "Website advance payment", amount: 2391.02, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e2", date: "2025-06-26", category: "Branding", vendor: "", description: "Logo", amount: 261.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e3", date: "2025-07-01", category: "License", vendor: "", description: "License first payment", amount: 2000.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e4", date: "2025-07-02", category: "Website", vendor: "", description: "Email charges 2804 inr", amount: 120.6, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e5", date: "2025-07-10", category: "License", vendor: "", description: "License fees", amount: 5265.87, paymentMethod: "online", paidBy: "Zamzam" },
+  { id: "e6", date: "2025-08-04", category: "License", vendor: "", description: "E channel registration", amount: 3135.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e7", date: "2025-08-06", category: "Website", vendor: "", description: "Website advance", amount: 525.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e8", date: "2025-08-08", category: "License", vendor: "", description: "Number update ica", amount: 150.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e9", date: "2025-08-14", category: "Website", vendor: "", description: "Balance for website", amount: 525.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e10", date: "2025-08-14", category: "Website", vendor: "", description: "Hosting tasjeel", amount: 966.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e11", date: "2025-08-16", category: "Branding", vendor: "", description: "Logo animation", amount: 200.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e12", date: "2025-08-20", category: "Travel", vendor: "", description: "Flight ticket Ankitha", amount: 559.73, paymentMethod: "online", paidBy: "Zamzam" },
+  { id: "e13", date: "2025-08-20", category: "Visa", vendor: "", description: "Ankitha visit visa", amount: 310.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e14", date: "2025-08-27", category: "Investment", vendor: "", description: "Account ADCB", amount: 2000.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e15", date: "2025-08-27", category: "Investment", vendor: "", description: "Account ADCB", amount: 2000.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e16", date: "2025-08-27", category: "Investment", vendor: "", description: "Account ADCB", amount: 2000.0, paymentMethod: "online", paidBy: "Zamzam" },
+  { id: "e17", date: "2025-09-15", category: "Marketing", vendor: "", description: "Advance for social media", amount: 4200.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e18", date: "2025-09-15", category: "Accomodation", vendor: "", description: "Rent advance", amount: 200.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e19", date: "2025-09-15", category: "Accomodation", vendor: "", description: "Room commission", amount: 300.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e20", date: "2025-09-16", category: "Travel", vendor: "", description: "Parking airport", amount: 15.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e21", date: "2025-09-16", category: "Travel", vendor: "", description: "Prasansa flight ticket cancel", amount: 39.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e22", date: "2025-09-19", category: "Visa", vendor: "", description: "Ankitha visa", amount: 2810.5, paymentMethod: "online", paidBy: "Zamzam" },
+  { id: "e23", date: "2025-09-22", category: "Visa", vendor: "", description: "Ankitha medical", amount: 255.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e24", date: "2025-09-23", category: "General", vendor: "", description: "Sim card ankitha", amount: 99.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e25", date: "2025-09-25", category: "Accomodation", vendor: "", description: "Sep oct rent", amount: 3400.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e26", date: "2025-09-25", category: "Marketing", vendor: "", description: "Marketing- insta ad", amount: 155.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e27", date: "2025-09-26", category: "Branding", vendor: "", description: "Yoga mat", amount: 38.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e28", date: "2025-09-27", category: "Branding", vendor: "", description: "T shirt", amount: 70.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e29", date: "2025-09-29", category: "Visa", vendor: "", description: "Insurance and EID", amount: 2116.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e30", date: "2025-10-06", category: "Phone", vendor: "", description: "Phone september", amount: 196.88, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e31", date: "2025-10-06", category: "Marketing", vendor: "", description: "Instagram", amount: 120.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e32", date: "2025-10-10", category: "Website", vendor: "", description: "Website balance", amount: 1000.0, paymentMethod: "online", paidBy: "Zamzam" },
+  { id: "e33", date: "2025-10-15", category: "Travel", vendor: "", description: "Pratima air ticket", amount: 504.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e34", date: "2025-10-15", category: "Visa", vendor: "", description: "Visa and return ticket pratima", amount: 340.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e35", date: "2025-10-23", category: "Accomodation", vendor: "", description: "Rent room new advance", amount: 750.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e36", date: "2025-10-27", category: "Marketing", vendor: "", description: "Pamphlets", amount: 280.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e37", date: "2025-11-01", category: "Phone", vendor: "", description: "Telephone october bill", amount: 196.88, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e38", date: "2025-11-02", category: "Accomodation", vendor: "", description: "Rent november", amount: 2500.0, paymentMethod: "online", paidBy: "Zamzam" },
+  { id: "e39", date: "2025-11-02", category: "Marketing", vendor: "", description: "Adipec registration Ankita and pratima", amount: 400.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e40", date: "2025-11-03", category: "General", vendor: "", description: "Sim card pratima", amount: 49.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e41", date: "2025-11-04", category: "Website", vendor: "", description: "Website security payment", amount: 291.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e42", date: "2025-11-12", category: "Marketing", vendor: "", description: "Spinneys khalidiya ad", amount: 157.5, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e43", date: "2025-11-12", category: "Branding", vendor: "", description: "Yoga mats", amount: 133.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e44", date: "2025-11-14", category: "Marketing", vendor: "", description: "Lunch shoot", amount: 275.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e45", date: "2025-11-14", category: "Marketing", vendor: "", description: "Rashmi taxi", amount: 50.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e46", date: "2025-11-17", category: "Marketing", vendor: "", description: "Mangrove village notice board", amount: 157.5, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e47", date: "2025-11-17", category: "Marketing", vendor: "", description: "Google Ad registration", amount: 35.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e48", date: "2025-11-18", category: "Marketing", vendor: "", description: "Company profile creation", amount: 261.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e49", date: "2025-11-19", category: "Branding", vendor: "", description: "Tshirts pratima", amount: 70.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e50", date: "2025-11-24", category: "Marketing", vendor: "", description: "Printing banner and t shirt", amount: 270.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e51", date: "2025-11-24", category: "Visa", vendor: "", description: "Pratima visit visa ext", amount: 1350.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e52", date: "2025-11-24", category: "License", vendor: "", description: "Visa gender change", amount: 3300.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e53", date: "2025-11-25", category: "Marketing", vendor: "", description: "Google Ads", amount: 200.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e54", date: "2025-11-27", category: "Visa", vendor: "", description: "Taxi pratima visa change", amount: 130.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e55", date: "2025-11-28", category: "Marketing", vendor: "", description: "Mind body app November plus 6 months", amount: 446.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e56", date: "2025-12-02", category: "Marketing", vendor: "", description: "Google ads", amount: 414.95, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e57", date: "2025-12-02", category: "Investment", vendor: "", description: "To the account", amount: 3350.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e58", date: "2025-12-02", category: "Investment", vendor: "", description: "To the account", amount: 5000.0, paymentMethod: "online", paidBy: "Zamzam" },
+  { id: "e59", date: "2025-12-02", category: "Phone", vendor: "", description: "Telephone bill", amount: 196.88, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e60", date: "2025-12-03", category: "Travel", vendor: "", description: "Pratima return ticket", amount: 738.68, paymentMethod: "online", paidBy: "Zamzam" },
+  { id: "e61", date: "2025-12-15", category: "Investment", vendor: "", description: "To the account", amount: 500.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e62", date: "2025-12-15", category: "Investment", vendor: "", description: "To the account", amount: 500.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e63", date: "2025-12-15", category: "Investment", vendor: "", description: "To the account", amount: 500.0, paymentMethod: "online", paidBy: "Zamzam" },
+  { id: "e64", date: "2025-12-24", category: "Marketing", vendor: "", description: "Seven days media december", amount: 2500.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e65", date: "2026-01-01", category: "Marketing", vendor: "", description: "Google Ads Dec", amount: 570.22, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e66", date: "2026-01-04", category: "Investment", vendor: "", description: "Zamzam account deposit", amount: 2000.0, paymentMethod: "online", paidBy: "Zamzam" },
+  { id: "e67", date: "2026-01-06", category: "Phone", vendor: "", description: "Etisalat", amount: 197.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e68", date: "2026-01-13", category: "Marketing", vendor: "", description: "Meta ad", amount: 59.85, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e69", date: "2026-01-15", category: "General", vendor: "", description: "Swing studio", amount: 500.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e70", date: "2026-01-15", category: "Marketing", vendor: "", description: "Meta ad", amount: 48.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e71", date: "2026-01-16", category: "Marketing", vendor: "", description: "Meta ad", amount: 48.3, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e72", date: "2026-01-18", category: "Marketing", vendor: "", description: "Meta ad 17 jan", amount: 48.3, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e73", date: "2026-01-18", category: "Marketing", vendor: "", description: "Meta ad 18 jan", amount: 43.8, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e74", date: "2026-01-19", category: "Marketing", vendor: "", description: "Insta story", amount: 231.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e75", date: "2026-01-21", category: "Visa", vendor: "", description: "Akshatha visa", amount: 340.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e76", date: "2026-01-22", category: "Investment", vendor: "", description: "Rehana bank transfer", amount: 2000.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e77", date: "2026-01-25", category: "Marketing", vendor: "", description: "Google ads", amount: 800.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e78", date: "2026-01-27", category: "Marketing", vendor: "", description: "Google managemet", amount: 500.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e79", date: "2026-01-28", category: "Investment", vendor: "", description: "Zamzam account transfer", amount: 3800.0, paymentMethod: "online", paidBy: "Zamzam" },
+  { id: "e80", date: "2026-02-01", category: "Marketing", vendor: "", description: "Google ads jan", amount: 298.95, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e81", date: "2026-02-01", category: "Visa", vendor: "", description: "Akshatha hotel booking", amount: 275.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e82", date: "2026-02-02", category: "Phone", vendor: "", description: "Jan tel bill", amount: 198.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e83", date: "2026-02-04", category: "Visa", vendor: "", description: "Akshatha visa", amount: 6140.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e84", date: "2026-02-09", category: "Visa", vendor: "", description: "Akshatha medical", amount: 250.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e85", date: "2026-02-24", category: "Marketing", vendor: "", description: "Google ads", amount: 946.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e86", date: "2026-02-26", category: "Marketing", vendor: "", description: "Google Ads management feb", amount: 500.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e87", date: "2026-03-02", category: "Phone", vendor: "", description: "Etisalat phone", amount: 198.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e88", date: "2026-03-04", category: "Marketing", vendor: "", description: "Insta ad", amount: 215.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e89", date: "2026-03-05", category: "Investment", vendor: "", description: "Paid to account", amount: 2000.0, paymentMethod: "online", paidBy: "Zamzam" },
+  { id: "e90", date: "2026-03-19", category: "Visa", vendor: "", description: "Ankitha return ticket", amount: 300.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e91", date: "2026-03-28", category: "Marketing", vendor: "", description: "Insta ad", amount: 222.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e92", date: "2026-03-30", category: "Investment", vendor: "", description: "March to the account", amount: 2000.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e93", date: "2026-03-30", category: "Investment", vendor: "", description: "March to the account", amount: 2000.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e94", date: "2026-03-30", category: "Investment", vendor: "", description: "March to the account", amount: 2000.0, paymentMethod: "online", paidBy: "Zamzam" },
+  { id: "e95", date: "2026-04-01", category: "Marketing", vendor: "", description: "Google ads", amount: 261.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e96", date: "2026-04-02", category: "Phone", vendor: "", description: "Telephone bill march", amount: 262.5, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e97", date: "2026-04-18", category: "Transport", vendor: "", description: "Taxi", amount: 20.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e98", date: "2026-04-18", category: "Marketing", vendor: "", description: "Petrol for shoot", amount: 200.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e99", date: "2026-04-19", category: "Accomodation", vendor: "", description: "Akshatha Rent may advance", amount: 400.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e100", date: "2026-04-21", category: "Branding", vendor: "", description: "Gym clothes", amount: 281.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e101", date: "2026-04-29", category: "Investment", vendor: "", description: "May account transfer", amount: 5100.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e102", date: "2026-04-29", category: "Investment", vendor: "", description: "May account transfer", amount: 5100.0, paymentMethod: "online", paidBy: "Zamzam" },
+  { id: "e103", date: "2026-04-30", category: "Marketing", vendor: "", description: "Yas island parking", amount: 15.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e104", date: "2026-05-03", category: "Phone", vendor: "", description: "Phone bill april", amount: 262.5, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e105", date: "2026-05-11", category: "Marketing", vendor: "", description: "Model", amount: 500.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e106", date: "2026-05-15", category: "Marketing", vendor: "", description: "Meta ad", amount: 134.4, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e107", date: "2026-05-17", category: "Marketing", vendor: "", description: "Meta ad", amount: 134.82, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e108", date: "2026-05-18", category: "Marketing", vendor: "", description: "Meta ad", amount: 134.65, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e109", date: "2026-05-31", category: "Accomodation", vendor: "", description: "Room rent", amount: 1400.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e110", date: "2026-06-02", category: "Phone", vendor: "", description: "Telephone may bill", amount: 262.5, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e111", date: "2026-06-05", category: "Investment", vendor: "", description: "June investment", amount: 2000.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e112", date: "2026-06-05", category: "Investment", vendor: "", description: "June investment", amount: 2000.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e113", date: "2026-06-05", category: "Investment", vendor: "", description: "June investment", amount: 3000.0, paymentMethod: "online", paidBy: "Zamzam" },
+  { id: "e114", date: "2026-06-11", category: "Marketing", vendor: "", description: "Ugc video", amount: 292.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e115", date: "2026-06-12", category: "Investment", vendor: "", description: "June investment", amount: 1000.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e116", date: "2026-06-16", category: "Website", vendor: "", description: "Domain renewal", amount: 152.25, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e117", date: "2026-06-22", category: "Marketing", vendor: "", description: "Model june", amount: 500.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e118", date: "2026-06-23", category: "License", vendor: "", description: "License renewal fees", amount: 2799.27, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e119", date: "2026-06-23", category: "License", vendor: "", description: "Labor updation", amount: 1420.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e120", date: "2026-06-25", category: "Travel", vendor: "", description: "Akshatha flight", amount: 1899.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e121", date: "2026-06-30", category: "Branding", vendor: "", description: "Yoga mat", amount: 200.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e122", date: "2026-06-30", category: "Investment", vendor: "", description: "July investment", amount: 3000.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e123", date: "2026-06-30", category: "Investment", vendor: "", description: "July investment", amount: 6000.0, paymentMethod: "online", paidBy: "Zamzam" },
+  { id: "e124", date: "2026-07-02", category: "Phone", vendor: "", description: "Phone bill", amount: 264.49, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e125", date: "2026-07-06", category: "Investment", vendor: "", description: "July investment rehana", amount: 1000.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e126", date: "2026-07-10", category: "Investment", vendor: "", description: "July investment", amount: 350.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e127", date: "2026-07-14", category: "Entertainment", vendor: "", description: "Moti mahal team dinner", amount: 305.55, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e128", date: "2026-08-06", category: "Phone", vendor: "", description: "Phone july", amount: 262.5, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e129", date: "2026-08-12", category: "Investment", vendor: "", description: "July investment jabir", amount: 1750.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e130", date: "2026-08-12", category: "Investment", vendor: "", description: "July investment zamzam", amount: 1750.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e131", date: "2026-08-18", category: "Marketing", vendor: "", description: "Lunch august shoot", amount: 139.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e132", date: "2026-08-18", category: "Accomodation", vendor: "", description: "Room rent advance jeethu", amount: 500.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e133", date: "2026-08-19", category: "Marketing", vendor: "", description: "BNI meeting", amount: 135.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e134", date: "2026-08-20", category: "Accomodation", vendor: "", description: "Driver Accommodation advance", amount: 100.0, paymentMethod: "online", paidBy: "Rehana" },
+  { id: "e135", date: "2026-08-22", category: "Branding", vendor: "", description: "Log sheet and card", amount: 295.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e136", date: "2026-08-24", category: "Car", vendor: "", description: "POA car", amount: 1450.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e137", date: "2026-08-25", category: "Car", vendor: "", description: "Traffic file opening", amount: 120.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e138", date: "2026-08-25", category: "Car", vendor: "", description: "Car insurance", amount: 1575.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e139", date: "2026-08-26", category: "Branding", vendor: "", description: "Yoga mat", amount: 567.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e140", date: "2026-08-27", category: "Website", vendor: "", description: "Cloudflare app hosting", amount: 112.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e141", date: "2026-08-27", category: "Car", vendor: "", description: "Car passing and inspection", amount: 350.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e142", date: "2026-08-28", category: "Car", vendor: "", description: "Car transfer registration", amount: 365.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e143", date: "2026-08-28", category: "Car", vendor: "", description: "Car", amount: 23000.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e144", date: "2026-08-28", category: "Car", vendor: "", description: "Car insurance", amount: 1650.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e145", date: "2026-08-28", category: "Fuel", vendor: "", description: "Petrol", amount: 110.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e146", date: "2026-08-29", category: "Marketing", vendor: "", description: "Mind body september", amount: 440.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e147", date: "2026-08-29", category: "Car", vendor: "", description: "Parking", amount: 391.0, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e148", date: "2026-08-30", category: "Phone", vendor: "", description: "Driver internet", amount: 42.85, paymentMethod: "online", paidBy: "Jabir" },
+  { id: "e149", date: "2026-08-31", category: "Investment", vendor: "", description: "To the account", amount: 8500.0, paymentMethod: "online", paidBy: "Zamzam" },
 ];
 
 const seedCustomers = [
@@ -184,7 +327,7 @@ function TopBar({ tab, setTab, userEmail }) {
   const items = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "customers", label: "Customers", icon: Users },
-    { id: "packages", label: "Packages", icon: PackageIcon },
+    { id: "expenses", label: "Expenses", icon: Receipt },
     { id: "trainers", label: "Trainers", icon: UserRound },
     { id: "schedule", label: "Schedule", icon: CalendarDays },
     { id: "utilization", label: "Utilisation", icon: Activity },
@@ -1392,11 +1535,21 @@ function Trainers({ trainers, setTrainers, classes, customers }) {
   );
 }
 
-function Packages({ packages, setPackages }) {
+const EXPENSE_CATEGORIES = ["Website", "Branding", "License", "Travel", "Visa", "Marketing", "Accomodation", "Rent", "General", "Phone", "Transport", "Entertainment", "Car", "Fuel", "Investment", "Utilities", "Equipment", "Supplies", "Salaries", "Other"];
+const EXPENSE_PARTNERS = ["Jabir", "Rehana", "Zamzam", "Other"];
+
+function Expenses({ expenses, setExpenses }) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const blankForm = { name: "", classes: 10, price: 1000, unlimited: false, type: "private" };
+  const blankForm = { date: todayISO(), category: "General", customCategory: "", vendor: "", description: "", amount: "", paymentMethod: "online", paidBy: "Jabir", customPaidBy: "" };
   const [form, setForm] = useState(blankForm);
+
+  const [mode, setMode] = useState("month");
+  const [month, setMonth] = useState(thisMonthISO());
+  const [startDate, setStartDate] = useState(monthStartISO());
+  const [endDate, setEndDate] = useState(monthEndISO());
+  const inPeriod = (dateStr) => (mode === "month" ? dateStr.startsWith(month) : dateStr >= startDate && dateStr <= endDate);
+  const periodExpenses = expenses.filter((e) => inPeriod(e.date));
 
   const startAdd = () => {
     setEditingId(null);
@@ -1404,101 +1557,247 @@ function Packages({ packages, setPackages }) {
     setOpen(true);
   };
 
-  const startEdit = (p) => {
-    setEditingId(p.id);
-    setForm({ name: p.name, classes: p.classes ?? 10, price: p.price, unlimited: p.classes === null, type: p.type || "private" });
+  const startEdit = (e) => {
+    setEditingId(e.id);
+    const known = EXPENSE_CATEGORIES.includes(e.category);
+    const knownPartner = EXPENSE_PARTNERS.includes(e.paidBy);
+    setForm({
+      date: e.date,
+      category: known ? e.category : "Other",
+      customCategory: known ? "" : e.category,
+      vendor: e.vendor || "",
+      description: e.description || "",
+      amount: e.amount,
+      paymentMethod: e.paymentMethod || "cash",
+      paidBy: knownPartner ? e.paidBy : "Other",
+      customPaidBy: knownPartner ? "" : (e.paidBy || ""),
+    });
     setOpen(true);
   };
 
   const submit = () => {
-    if (!form.name) return;
-    const payload = { name: form.name, price: Number(form.price), classes: form.unlimited ? null : Number(form.classes), type: form.type };
+    if (!form.amount) return;
+    const category = form.category === "Other" ? (form.customCategory.trim() || "Other") : form.category;
+    const paidBy = form.paidBy === "Other" ? (form.customPaidBy.trim() || "Other") : form.paidBy;
+    const payload = {
+      date: form.date || todayISO(),
+      category,
+      vendor: form.vendor,
+      description: form.description,
+      amount: Number(form.amount) || 0,
+      paymentMethod: form.paymentMethod,
+      paidBy,
+    };
     if (editingId) {
-      setPackages((ps) => ps.map((p) => (p.id === editingId ? { ...p, ...payload } : p)));
+      setExpenses((es) => es.map((e) => (e.id === editingId ? { ...e, ...payload } : e)));
     } else {
-      setPackages((ps) => [...ps, { id: uid("pk"), ...payload }]);
+      setExpenses((es) => [...es, { id: uid("e"), ...payload }]);
     }
     setForm(blankForm);
     setOpen(false);
   };
 
-  const removePackage = (id) => setPackages((ps) => ps.filter((p) => p.id !== id));
+  const removeExpense = (id) => setExpenses((es) => es.filter((e) => e.id !== id));
+
+  const sortedExpenses = [...periodExpenses].sort((a, b) => b.date.localeCompare(a.date));
+  const total = periodExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+
+  const categoryMap = {};
+  periodExpenses.forEach((e) => {
+    categoryMap[e.category] = (categoryMap[e.category] || 0) + (Number(e.amount) || 0);
+  });
+  const categoryBreakdown = Object.entries(categoryMap).sort((a, b) => b[1] - a[1]);
+
+  const partnerMap = {};
+  periodExpenses.forEach((e) => {
+    const key = e.paidBy || "Unspecified";
+    partnerMap[key] = (partnerMap[key] || 0) + (Number(e.amount) || 0);
+  });
+  const partnerBreakdown = Object.entries(partnerMap).sort((a, b) => b[1] - a[1]);
+
+  const exportExpensesCSV = () => {
+    downloadCSV(
+      `click-a-yoga-expenses-${new Date().toISOString().slice(0, 10)}.csv`,
+      ["Date", "Category", "Paid By", "Vendor", "Description", "Amount", "Payment Method"],
+      sortedExpenses.map((e) => [e.date, e.category, e.paidBy || "", e.vendor || "", e.description || "", e.amount, e.paymentMethod === "online" ? "Online" : "Cash"])
+    );
+  };
 
   return (
     <div>
       <SectionTitle
-        eyebrow="Pricing"
-        title="Packages"
+        eyebrow="Spending"
+        title="Expenses"
         action={
-          <button onClick={startAdd} className="flex items-center gap-1.5 bg-green-700 text-white text-sm px-3 py-2 rounded-md hover:bg-green-800">
-            <Plus size={14} /> Add package
+          <div className="flex flex-wrap items-center gap-2">
+            <PeriodSelector
+              mode={mode}
+              setMode={setMode}
+              month={month}
+              setMonth={setMonth}
+              startDate={startDate}
+              setStartDate={setStartDate}
+              endDate={endDate}
+              setEndDate={setEndDate}
+            />
+            <button onClick={startAdd} className="flex items-center gap-1.5 bg-green-700 text-white text-sm px-3 py-2 rounded-md hover:bg-green-800">
+              <Plus size={14} /> Add expense
+            </button>
+          </div>
+        }
+      />
+
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+        <Card className="p-4">
+          <div className="text-[11px] uppercase tracking-wide text-green-600">Total expenses</div>
+          <div className="text-2xl font-serif text-green-900 mt-1">{AED(total)}</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-[11px] uppercase tracking-wide text-green-600">Entries</div>
+          <div className="text-2xl font-serif text-green-900 mt-1">{periodExpenses.length}</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-[11px] uppercase tracking-wide text-green-600">Top category</div>
+          <div className="text-lg font-serif text-green-900 mt-1">{categoryBreakdown[0]?.[0] || "—"}</div>
+        </Card>
+      </div>
+
+      <SectionTitle eyebrow="Breakdown" title="By category" />
+      <Card className="p-5 mb-8">
+        {categoryBreakdown.length ? (
+          <div className="space-y-2">
+            {categoryBreakdown.map(([label, amount]) => (
+              <div key={label} className="flex items-center justify-between text-sm">
+                <span className="text-green-700">{label}</span>
+                <span className="font-medium text-green-900">{AED(amount)}</span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between text-sm border-t border-gray-100 pt-2 mt-2">
+              <span className="font-medium text-green-900">Total</span>
+              <span className="font-serif text-lg text-green-900">{AED(total)}</span>
+            </div>
+          </div>
+        ) : (
+          <div className="text-sm text-green-600">No expenses logged for this period.</div>
+        )}
+      </Card>
+
+      <SectionTitle eyebrow="Breakdown" title="By partner" />
+      <Card className="p-5 mb-8">
+        {partnerBreakdown.length ? (
+          <div className="space-y-2">
+            {partnerBreakdown.map(([label, amount]) => (
+              <div key={label} className="flex items-center justify-between text-sm">
+                <span className="text-green-700">{label}</span>
+                <span className="font-medium text-green-900">{AED(amount)}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-sm text-green-600">No expenses logged for this period.</div>
+        )}
+      </Card>
+
+      <SectionTitle
+        eyebrow="Ledger"
+        title="All expenses"
+        action={
+          <button
+            onClick={exportExpensesCSV}
+            className="flex items-center gap-1.5 text-green-700 text-sm px-3 py-2 rounded-md border border-green-100 hover:bg-green-50"
+            title="Download expenses as Excel/CSV"
+          >
+            <Download size={14} /> Export
           </button>
         }
       />
-      <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-4">
-        {packages.map((p) => (
-          <Card key={p.id} className="p-5">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2 text-green-500">
-                <PackageIcon size={16} />
-                <span className="text-[11px] uppercase tracking-wide">{p.classes ? `${p.classes} classes` : "Unlimited"}</span>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <button onClick={() => startEdit(p)} className="text-green-600 hover:text-green-900" title="Edit package">
-                  <Pencil size={14} />
-                </button>
-                <button onClick={() => removePackage(p.id)} className="text-green-600 hover:text-red-500" title="Delete package">
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            </div>
-            <div className="font-medium text-green-900">{p.name}</div>
-            {p.type === "group" && (
-              <span className="inline-block text-[10px] uppercase tracking-wide bg-green-100 text-green-700 px-2 py-0.5 rounded-full mt-1">
-                Group class · 10% commission
-              </span>
+      <Card className="overflow-hidden">
+        <div className="overflow-auto" style={{ maxHeight: "420px" }}>
+        <table className="w-full text-sm min-w-[900px]">
+          <thead className="bg-green-50 text-green-700 text-xs uppercase tracking-wide sticky top-0 z-10">
+            <tr>
+              <th className="text-left px-4 py-3">Date</th>
+              <th className="text-left px-4 py-3">Category</th>
+              <th className="text-left px-4 py-3">Paid By</th>
+              <th className="text-left px-4 py-3">Vendor</th>
+              <th className="text-left px-4 py-3">Description</th>
+              <th className="text-left px-4 py-3">Method</th>
+              <th className="text-left px-4 py-3">Amount</th>
+              <th className="text-left px-4 py-3"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedExpenses.length === 0 && (
+              <tr><td colSpan={8} className="px-4 py-6 text-center text-sm text-green-600">No expenses logged for this period.</td></tr>
             )}
-            <div className="font-serif text-2xl text-green-900 mt-1">{AED(p.price)}</div>
-            {p.classes ? (
-              <div className="text-xs text-green-600 mt-1">{AED(Math.round(p.price / p.classes))} per class</div>
-            ) : (
-              <div className="text-xs text-green-600 mt-1">per month</div>
-            )}
-          </Card>
-        ))}
-      </div>
+            {sortedExpenses.map((e) => (
+              <tr key={e.id} className="border-t border-gray-100">
+                <td className="px-4 py-3 text-green-900 whitespace-nowrap">{e.date}</td>
+                <td className="px-4 py-3 text-green-700 whitespace-nowrap">{e.category}</td>
+                <td className="px-4 py-3 text-green-700 whitespace-nowrap">{e.paidBy || "—"}</td>
+                <td className="px-4 py-3 text-green-700 whitespace-nowrap">{e.vendor || "—"}</td>
+                <td className="px-4 py-3 text-green-700">{e.description || "—"}</td>
+                <td className="px-4 py-3 text-green-700 whitespace-nowrap">{e.paymentMethod === "online" ? "Online" : "Cash"}</td>
+                <td className="px-4 py-3 text-green-900 font-medium whitespace-nowrap">{AED(e.amount)}</td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2.5">
+                    <button onClick={() => startEdit(e)} className="text-green-600 hover:text-green-900" title="Edit expense">
+                      <Pencil size={14} />
+                    </button>
+                    <button onClick={() => removeExpense(e.id)} className="text-green-600 hover:text-red-500" title="Delete expense">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
+      </Card>
 
       {open && (
-        <Modal title={editingId ? "Edit package" : "Add package"} onClose={() => setOpen(false)}>
-          <Field label="Package name">
-            <input className={inputCls} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. 15-Class Pack" />
+        <Modal title={editingId ? "Edit expense" : "Add expense"} onClose={() => setOpen(false)}>
+          <Field label="Date">
+            <input type="date" className={inputCls} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
           </Field>
-          <Field label="Class count">
-            <select
-              className={inputCls}
-              value={form.unlimited ? "unlimited" : "fixed"}
-              onChange={(e) => setForm({ ...form, unlimited: e.target.value === "unlimited" })}
-            >
-              <option value="fixed">Fixed number of classes</option>
-              <option value="unlimited">Unlimited (monthly)</option>
+          <Field label="Category">
+            <select className={inputCls} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+              {EXPENSE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </Field>
-          {!form.unlimited && (
-            <Field label="Number of classes">
-              <input type="number" className={inputCls} value={form.classes} onChange={(e) => setForm({ ...form, classes: e.target.value })} />
+          {form.category === "Other" && (
+            <Field label="Custom category name">
+              <input className={inputCls} value={form.customCategory} onChange={(e) => setForm({ ...form, customCategory: e.target.value })} placeholder="e.g. Insurance" />
             </Field>
           )}
-          <Field label="Price (AED)">
-            <input type="number" className={inputCls} value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
+          <Field label="Paid by">
+            <select className={inputCls} value={form.paidBy} onChange={(e) => setForm({ ...form, paidBy: e.target.value })}>
+              {EXPENSE_PARTNERS.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
           </Field>
-          <Field label="Class type">
-            <select className={inputCls} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
-              <option value="private">Private (trainer's tiered commission)</option>
-              <option value="group">Group (flat 10% commission)</option>
+          {form.paidBy === "Other" && (
+            <Field label="Custom name">
+              <input className={inputCls} value={form.customPaidBy} onChange={(e) => setForm({ ...form, customPaidBy: e.target.value })} placeholder="Who paid this?" />
+            </Field>
+          )}
+          <Field label="Vendor / paid to (optional)">
+            <input className={inputCls} value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} placeholder="e.g. DEWA, Landlord" />
+          </Field>
+          <Field label="Description">
+            <input className={inputCls} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="What was this for?" />
+          </Field>
+          <Field label="Amount (AED)">
+            <input type="number" className={inputCls} value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+          </Field>
+          <Field label="Payment method">
+            <select className={inputCls} value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}>
+              <option value="cash">Cash</option>
+              <option value="online">Online</option>
             </select>
           </Field>
           <button onClick={submit} className="w-full bg-green-500 text-white rounded-md py-2 text-sm mt-2 hover:bg-green-600">
-            {editingId ? "Save changes" : "Save package"}
+            {editingId ? "Save changes" : "Save expense"}
           </button>
         </Modal>
       )}
@@ -2507,7 +2806,7 @@ function LoginScreen() {
 
 // ---------- Trainer portal (restricted view for trainer logins) ----------
 // Shown instead of the full app when the signed-in email matches a trainer's
-// portal login. Deliberately has no access to customers, payments, packages,
+// portal login. Deliberately has no access to customers, payments, expenses,
 // other trainers, or commission figures — schedule only, and only their own.
 
 function TrainerPortal({ trainer, classes, setClasses, customers, userEmail }) {
@@ -2649,7 +2948,7 @@ export default function App() {
   const signedIn = !!session;
   const [syncError, setSyncError] = useState("");
   const [trainers, setTrainers] = useSyncedTable("trainers", seedTrainers, signedIn, setSyncError);
-  const [packages, setPackages] = useSyncedTable("packages", seedPackages, signedIn, setSyncError);
+  const [expenses, setExpenses] = useSyncedTable("expenses", seedExpenses, signedIn, setSyncError);
   const [customers, setCustomers, insertCustomer] = useSyncedTable("customers", seedCustomers, signedIn, setSyncError);
   const [classes, setClasses] = useSyncedTable("classes", seedClasses, signedIn, setSyncError);
   const [payments, setPayments] = useSyncedTable("payments", seedPayments, signedIn, setSyncError);
@@ -2699,7 +2998,7 @@ export default function App() {
       </div>
       <div className="flex-1 min-w-0">
         <div className="md:hidden flex gap-2 overflow-x-auto p-3 bg-white border-b border-green-100">
-          {["dashboard", "customers", "packages", "trainers", "schedule", "utilization", "commission"].map((id) => (
+          {["dashboard", "customers", "expenses", "trainers", "schedule", "utilization", "commission"].map((id) => (
             <button
               key={id}
               onClick={() => setTab(id)}
@@ -2722,7 +3021,7 @@ export default function App() {
             <Dashboard trainers={trainers} customers={customers} classes={classes} payments={payments} />
           )}
           {tab === "customers" && <Customers customers={customers} setCustomers={setCustomers} insertCustomer={insertCustomer} payments={payments} setPayments={setPayments} classes={classes} setClasses={setClasses} onBookCustomer={bookCustomer} />}
-          {tab === "packages" && <Packages packages={packages} setPackages={setPackages} />}
+          {tab === "expenses" && <Expenses expenses={expenses} setExpenses={setExpenses} />}
           {tab === "trainers" && <Trainers trainers={trainers} setTrainers={setTrainers} classes={classes} customers={customers} />}
           {tab === "schedule" && (
             <Schedule
