@@ -2323,7 +2323,15 @@ function useSyncedTable(table, seed, enabled, onError) {
     let cancelled = false;
 
     (async () => {
-      const { data, error } = await supabase.from(table).select("*");
+      let { data, error } = await supabase.from(table).select("*");
+      // "JWT issued at future" is almost always transient clock skew between the
+      // browser and the server — refreshing the session mints a fresh token and
+      // usually clears it immediately, so try that once automatically before
+      // bothering the user with an error they'd otherwise have to refresh past.
+      if (error && /jwt|issued at future/i.test(error.message || "")) {
+        await supabase.auth.refreshSession();
+        ({ data, error } = await supabase.from(table).select("*"));
+      }
       if (cancelled) return;
       if (error) {
         console.error(`Failed to load ${table}:`, error.message);
