@@ -92,6 +92,19 @@ const mondayOfThisWeekISO = () => {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
 
+// Displays a stored 24-hour "HH:MM" time as 12-hour with AM/PM — storage and the
+// <input type="time"> field stay in 24h format regardless, this is display-only.
+const formatTime12h = (time24) => {
+  if (!time24) return "";
+  const [hStr, m] = time24.split(":");
+  let h = parseInt(hStr, 10);
+  if (Number.isNaN(h)) return time24;
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12;
+  if (h === 0) h = 12;
+  return `${h}:${m} ${ampm}`;
+};
+
 const AED = (n) => `AED ${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
 // Builds a CSV file from rows of {label, value} pairs per column and triggers a browser
@@ -1322,7 +1335,7 @@ function Trainers({ trainers, setTrainers, classes, customers }) {
                 {rows.map((c) => (
                   <tr key={c.id} className="border-t border-gray-100">
                     <td className="px-3 py-2 text-green-700 whitespace-nowrap">{c.date}</td>
-                    <td className="px-3 py-2 text-green-700 whitespace-nowrap">{c.time}</td>
+                    <td className="px-3 py-2 text-green-700 whitespace-nowrap">{formatTime12h(c.time)}</td>
                     <td className="px-3 py-2 text-green-700 whitespace-nowrap">{nameOfCustomer(c.customerId)}</td>
                   </tr>
                 ))}
@@ -1531,7 +1544,7 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, pref
   const exportSessionsCSV = () => {
     const rows = [...filteredClasses]
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
-      .map((c) => [c.date, c.time, nameOf(trainers, c.trainerId), nameOf(customers, c.customerId), locationOf(c.customerId), c.status]);
+      .map((c) => [c.date, formatTime12h(c.time), nameOf(trainers, c.trainerId), nameOf(customers, c.customerId), locationOf(c.customerId), c.status]);
     downloadCSV(
       `click-a-yoga-sessions-${new Date().toISOString().slice(0, 10)}.csv`,
       ["Date", "Time", "Trainer", "Customer", "Location", "Status"],
@@ -1622,6 +1635,15 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, pref
     const cls = classes.find((c) => c.id === id);
     setClasses((cs) => cs.filter((c) => c.id !== id));
     if (cls) adjustCustomerClasses(cls.customerId, 1);
+  };
+
+  // "Cancel session" always asks for confirmation first, then deletes the class
+  // (refunding the customer's class via removeClass) rather than keeping a
+  // separate "cancelled" status cluttering the calendar.
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const confirmCancel = () => {
+    if (cancelTarget) removeClass(cancelTarget.id);
+    setCancelTarget(null);
   };
 
   // Only blocks the scheduled → completed transition for classes dated after today;
@@ -1773,7 +1795,7 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, pref
               {sorted.map((c) => (
                 <tr key={c.id} className="border-t border-gray-100">
                   <td className="px-4 py-3 text-green-900">{c.date}</td>
-                  <td className="px-4 py-3 text-green-700">{c.time}</td>
+                  <td className="px-4 py-3 text-green-700">{formatTime12h(c.time)}</td>
                   <td className="px-4 py-3 text-green-700">{nameOf(trainers, c.trainerId)}</td>
                   <td className="px-4 py-3 text-green-700">{nameOf(customers, c.customerId)}</td>
                   <td className="px-4 py-3 text-green-700">{locationOf(c.customerId)}</td>
@@ -1795,7 +1817,7 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, pref
                       <button onClick={() => startEdit(c)} className="text-green-600 hover:text-green-900" title="Edit session">
                         <Pencil size={15} />
                       </button>
-                      <button onClick={() => removeClass(c.id)} className="text-green-600 hover:text-red-500" title="Delete session">
+                      <button onClick={() => setCancelTarget(c)} className="text-green-600 hover:text-red-500" title="Cancel session">
                         <Trash2 size={15} />
                       </button>
                     </div>
@@ -1831,7 +1853,7 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, pref
               {dayClassesSorted.map((c) => (
                 <div key={c.id} className="flex items-center justify-between rounded-md border border-gray-100 px-3 py-2.5">
                   <div className="flex items-center gap-3 flex-wrap">
-                    <span className="text-sm font-medium text-green-900 w-14">{c.time}</span>
+                    <span className="text-sm font-medium text-green-900 w-14">{formatTime12h(c.time)}</span>
                     <div className="text-sm text-green-700">
                       <span className="text-green-900">{nameOf(trainers, c.trainerId)}</span> · {nameOf(customers, c.customerId)}
                     </div>
@@ -1854,7 +1876,7 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, pref
                     <button onClick={() => startEdit(c)} className="text-green-600 hover:text-green-900" title="Edit session">
                       <Pencil size={15} />
                     </button>
-                    <button onClick={() => removeClass(c.id)} className="text-green-600 hover:text-red-500" title="Delete session">
+                    <button onClick={() => setCancelTarget(c)} className="text-green-600 hover:text-red-500" title="Cancel session">
                       <Trash2 size={15} />
                     </button>
                   </div>
@@ -1891,7 +1913,7 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, pref
               <tbody>
                 {Array.from({ length: 16 }, (_, i) => 6 + i).map((hour) => (
                   <tr key={hour} className="border-t border-gray-100">
-                    <td className="text-xs text-green-600 px-2 py-1.5 align-top whitespace-nowrap">{String(hour).padStart(2, "0")}:00</td>
+                    <td className="text-xs text-green-600 px-2 py-1.5 align-top whitespace-nowrap">{formatTime12h(`${String(hour).padStart(2, "0")}:00`)}</td>
                     {weekDates.map((dateStr) => {
                       const hourClasses = (classesByDate[dateStr] || []).filter((c) => Number(c.time.split(":")[0]) === hour);
                       return (
@@ -1906,7 +1928,7 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, pref
                                 }`}
                                 title={`${nameOf(trainers, c.trainerId)} · ${nameOf(customers, c.customerId)} · ${locationOf(c.customerId)}`}
                               >
-                                <div className="font-medium">{c.time} {firstName(nameOf(trainers, c.trainerId))}</div>
+                                <div className="font-medium">{formatTime12h(c.time)} {firstName(nameOf(trainers, c.trainerId))}</div>
                                 <div className="truncate">{nameOf(customers, c.customerId)}</div>
                               </button>
                             ))}
@@ -1962,7 +1984,7 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, pref
                         }`}
                         title={`${nameOf(trainers, c.trainerId)} · ${nameOf(customers, c.customerId)} · ${locationOf(c.customerId)}`}
                       >
-                        <div className="truncate font-medium">{c.time} {firstName(nameOf(trainers, c.trainerId))}</div>
+                        <div className="truncate font-medium">{formatTime12h(c.time)} {firstName(nameOf(trainers, c.trainerId))}</div>
                         <div className="truncate opacity-70">{locationOf(c.customerId)}</div>
                       </button>
                     ))}
@@ -1972,6 +1994,28 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, pref
             })}
           </div>
         </Card>
+      )}
+
+      {cancelTarget && (
+        <Modal title="Cancel this session?" onClose={() => setCancelTarget(null)}>
+          <p className="text-sm text-green-700 mb-1">
+            <span className="font-medium text-green-900">{cancelTarget.date} at {formatTime12h(cancelTarget.time)}</span>
+          </p>
+          <p className="text-sm text-green-700 mb-5">
+            {nameOf(trainers, cancelTarget.trainerId)} · {nameOf(customers, cancelTarget.customerId)}
+          </p>
+          <p className="text-xs text-green-600 mb-5">
+            This will remove the session from the calendar and refund the class back to the customer's remaining balance. This can't be undone.
+          </p>
+          <div className="flex gap-2">
+            <button onClick={() => setCancelTarget(null)} className="flex-1 border border-green-100 text-green-700 rounded-md py-2 text-sm hover:bg-green-50">
+              Keep session
+            </button>
+            <button onClick={confirmCancel} className="flex-1 bg-red-500 text-white rounded-md py-2 text-sm hover:bg-red-600">
+              Yes, cancel session
+            </button>
+          </div>
+        </Modal>
       )}
 
       {open && (
@@ -2528,7 +2572,7 @@ function TrainerPortal({ trainer, classes, setClasses, customers, userEmail }) {
             return (
               <Card key={c.id} className="p-4 flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-medium text-green-900">{c.date} · {c.time}</div>
+                  <div className="text-sm font-medium text-green-900">{c.date} · {formatTime12h(c.time)}</div>
                   <div className="text-sm text-green-700">{nameOf(c.customerId)}</div>
                   <div className="text-xs text-green-600 flex items-center gap-1 mt-0.5">
                     <MapPin size={11} /> {locationOf(c.customerId)}
@@ -2555,7 +2599,7 @@ function TrainerPortal({ trainer, classes, setClasses, customers, userEmail }) {
           {completed.map((c) => (
             <Card key={c.id} className="p-4 flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-medium text-green-900">{c.date} · {c.time}</div>
+                <div className="text-sm font-medium text-green-900">{c.date} · {formatTime12h(c.time)}</div>
                 <div className="text-sm text-green-700">{nameOf(c.customerId)}</div>
               </div>
               <button
