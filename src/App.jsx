@@ -857,6 +857,19 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
     setClasses((cls) => cls.filter((c) => !idsToRemove.has(c.customerId)));
   };
 
+  // Both delete paths always ask for confirmation first, since they cascade to
+  // remove payments and any scheduled/completed classes too.
+  const [deleteBookingTarget, setDeleteBookingTarget] = useState(null); // one booking (customer row)
+  const [deletePersonTarget, setDeletePersonTarget] = useState(null); // a whole person (key + display info)
+  const confirmDeleteBooking = () => {
+    if (deleteBookingTarget) removeCustomer(deleteBookingTarget.id);
+    setDeleteBookingTarget(null);
+  };
+  const confirmDeletePerson = () => {
+    if (deletePersonTarget) removePerson(deletePersonTarget.key);
+    setDeletePersonTarget(null);
+  };
+
   // Status (active/inactive/frozen) is a person-level attribute, but bookings are
   // stored per line item — so it's kept in sync across every booking that shares
   // this person's personId whenever it's changed from the detail view.
@@ -1012,7 +1025,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
                     <button onClick={() => startNewBooking(p.latest)} className="text-green-500 hover:text-green-700" title="New booking for this customer">
                       <RefreshCw size={15} />
                     </button>
-                    <button onClick={() => removePerson(p.key)} className="text-green-600 hover:text-red-500" title="Delete this customer and all their bookings">
+                    <button onClick={() => setDeletePersonTarget(p)} className="text-green-600 hover:text-red-500" title="Delete this customer and all their bookings">
                       <Trash2 size={15} />
                     </button>
                   </div>
@@ -1199,6 +1212,50 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
         </Modal>
       )}
 
+      {deleteBookingTarget && (
+        <Modal title="Delete this booking?" onClose={() => setDeleteBookingTarget(null)}>
+          <p className="text-sm text-green-700 mb-1">
+            <span className="font-medium text-green-900">{deleteBookingTarget.name}</span>
+          </p>
+          <p className="text-sm text-green-700 mb-5">
+            {deleteBookingTarget.classType === "group" ? "Group" : "Private"} — {deleteBookingTarget.unlimited ? "Unlimited" : `${deleteBookingTarget.numberOfClasses} classes`}, joined {deleteBookingTarget.joined}
+          </p>
+          <p className="text-xs text-green-600 mb-5">
+            This will delete this booking along with its payment record and any of the customer's scheduled or completed classes tied to it. This can't be undone.
+          </p>
+          <div className="flex gap-2">
+            <button onClick={() => setDeleteBookingTarget(null)} className="flex-1 border border-green-100 text-green-700 rounded-md py-2 text-sm hover:bg-green-50">
+              Keep booking
+            </button>
+            <button onClick={confirmDeleteBooking} className="flex-1 bg-red-500 text-white rounded-md py-2 text-sm hover:bg-red-600">
+              Yes, delete
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {deletePersonTarget && (
+        <Modal title="Delete this customer?" onClose={() => setDeletePersonTarget(null)}>
+          <p className="text-sm text-green-700 mb-1">
+            <span className="font-medium text-green-900">{deletePersonTarget.latest.name}</span>
+          </p>
+          <p className="text-sm text-green-700 mb-5">
+            {deletePersonTarget.bookings.length} booking{deletePersonTarget.bookings.length === 1 ? "" : "s"}
+          </p>
+          <p className="text-xs text-green-600 mb-5">
+            This will delete every one of this customer's bookings, their full payment history, and any of their scheduled or completed classes on the calendar. This can't be undone.
+          </p>
+          <div className="flex gap-2">
+            <button onClick={() => setDeletePersonTarget(null)} className="flex-1 border border-green-100 text-green-700 rounded-md py-2 text-sm hover:bg-green-50">
+              Keep customer
+            </button>
+            <button onClick={confirmDeletePerson} className="flex-1 bg-red-500 text-white rounded-md py-2 text-sm hover:bg-red-600">
+              Yes, delete everything
+            </button>
+          </div>
+        </Modal>
+      )}
+
       {detailPerson && (() => {
         const person = allPeople.find((p) => p.key === detailPerson);
         if (!person) return null;
@@ -1209,9 +1266,8 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
           setDetailPerson(null);
           startEdit(b);
         };
-        const deleteBooking = (id) => {
-          removeCustomer(id);
-          if (person.bookings.length <= 1) setDetailPerson(null);
+        const deleteBooking = (b) => {
+          setDeleteBookingTarget(b);
         };
         const addBooking = () => {
           setDetailPerson(null);
@@ -1277,7 +1333,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
                           <button onClick={() => editBooking(b)} className="text-green-600 hover:text-green-900" title="Edit this booking">
                             <Pencil size={14} />
                           </button>
-                          <button onClick={() => deleteBooking(b.id)} className="text-green-600 hover:text-red-500" title="Delete this booking">
+                          <button onClick={() => deleteBooking(b)} className="text-green-600 hover:text-red-500" title="Delete this booking">
                             <Trash2 size={14} />
                           </button>
                         </div>
