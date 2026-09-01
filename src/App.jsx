@@ -35,6 +35,8 @@ const seedTrainers = [
   { id: "t2", name: "Dr. Akshatha", cred: "BNYS Naturopathy Doctor", baseSalary: 2000, commissionRate: 0.2, monthlyTarget: 130 },
 ];
 
+const seedTimeOff = [];
+
 const seedExpenses = [
   { id: "e1", date: "2025-06-16", category: "Website", vendor: "", description: "Website advance payment", amount: 2391.02, paymentMethod: "online", paidBy: "Rehana" },
   { id: "e2", date: "2025-06-26", category: "Branding", vendor: "", description: "Logo", amount: 261.0, paymentMethod: "online", paidBy: "Jabir" },
@@ -1374,12 +1376,17 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   );
 }
 
-function Trainers({ trainers, setTrainers, classes, customers }) {
+function Trainers({ trainers, setTrainers, classes, customers, timeOff, setTimeOff, onViewSchedule }) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const blankForm = { name: "", cred: "", baseSalary: 2000, commissionRate: 0.2, monthlyTarget: 130, authEmail: "" };
   const [form, setForm] = useState(blankForm);
   const [detailTrainerId, setDetailTrainerId] = useState(null);
+  const [deleteTrainerTarget, setDeleteTrainerTarget] = useState(null);
+
+  const [timeOffOpen, setTimeOffOpen] = useState(false);
+  const blankTimeOffForm = { startDate: todayISO(), endDate: todayISO(), reason: "" };
+  const [timeOffForm, setTimeOffForm] = useState(blankTimeOffForm);
 
   const startAdd = () => {
     setEditingId(null);
@@ -1404,7 +1411,22 @@ function Trainers({ trainers, setTrainers, classes, customers }) {
     setOpen(false);
   };
 
-  const removeTrainer = (id) => setTrainers((ts) => ts.filter((t) => t.id !== id));
+  const removeTrainer = (id) => {
+    setTrainers((ts) => ts.filter((t) => t.id !== id));
+    setTimeOff((tos) => tos.filter((o) => o.trainerId !== id));
+  };
+  const confirmDeleteTrainer = () => {
+    if (deleteTrainerTarget) removeTrainer(deleteTrainerTarget.id);
+    setDeleteTrainerTarget(null);
+  };
+
+  const addTimeOff = (trainerId) => {
+    if (!timeOffForm.startDate || !timeOffForm.endDate) return;
+    setTimeOff((tos) => [...tos, { id: uid("off"), trainerId, ...timeOffForm }]);
+    setTimeOffForm(blankTimeOffForm);
+    setTimeOffOpen(false);
+  };
+  const removeTimeOff = (id) => setTimeOff((tos) => tos.filter((o) => o.id !== id));
 
   return (
     <div>
@@ -1428,7 +1450,7 @@ function Trainers({ trainers, setTrainers, classes, customers }) {
                 <button onClick={() => startEdit(t)} className="text-green-600 hover:text-green-900" title="Edit trainer">
                   <Pencil size={14} />
                 </button>
-                <button onClick={() => removeTrainer(t.id)} className="text-green-600 hover:text-red-500" title="Delete trainer">
+                <button onClick={() => setDeleteTrainerTarget(t)} className="text-green-600 hover:text-red-500" title="Delete trainer">
                   <Trash2 size={14} />
                 </button>
               </div>
@@ -1447,9 +1469,31 @@ function Trainers({ trainers, setTrainers, classes, customers }) {
             ) : (
               <div className="text-[11px] text-green-500 mt-2">No portal login set up</div>
             )}
+            <button
+              onClick={() => onViewSchedule?.(t.id)}
+              className="flex items-center gap-1 text-xs text-green-700 border border-green-100 rounded-md px-2.5 py-1.5 mt-3 hover:bg-green-50"
+            >
+              <CalendarDays size={12} /> View full schedule
+            </button>
           </Card>
         ))}
       </div>
+
+      {deleteTrainerTarget && (
+        <Modal title="Delete this trainer?" onClose={() => setDeleteTrainerTarget(null)}>
+          <p className="text-sm text-green-700 mb-5">
+            <span className="font-medium text-green-900">{deleteTrainerTarget.name}</span> will be removed, along with any time off booked for them. Their existing classes on the schedule are kept as-is.
+          </p>
+          <div className="flex gap-2">
+            <button onClick={() => setDeleteTrainerTarget(null)} className="flex-1 border border-green-100 text-green-700 rounded-md py-2 text-sm hover:bg-green-50">
+              Keep trainer
+            </button>
+            <button onClick={confirmDeleteTrainer} className="flex-1 bg-red-500 text-white rounded-md py-2 text-sm hover:bg-red-600">
+              Yes, delete
+            </button>
+          </div>
+        </Modal>
+      )}
 
       {detailTrainerId && (() => {
         const trainer = trainers.find((t) => t.id === detailTrainerId);
@@ -1460,6 +1504,7 @@ function Trainers({ trainers, setTrainers, classes, customers }) {
           .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
         const scheduled = trainerClasses.filter((c) => c.status === "scheduled");
         const completed = trainerClasses.filter((c) => c.status === "completed");
+        const myTimeOff = [...timeOff].filter((o) => o.trainerId === detailTrainerId).sort((a, b) => b.startDate.localeCompare(a.startDate));
 
         const sessionTable = (rows, emptyLabel) => (
           <div className="overflow-x-auto border border-gray-100 rounded-md mb-5">
@@ -1489,6 +1534,71 @@ function Trainers({ trainers, setTrainers, classes, customers }) {
 
         return (
           <Modal title={`${trainer.name} — sessions`} onClose={() => setDetailTrainerId(null)} wide>
+            <button
+              onClick={() => { setDetailTrainerId(null); onViewSchedule?.(detailTrainerId); }}
+              className="flex items-center gap-1 text-xs bg-green-700 text-white rounded-md px-2.5 py-1.5 mb-5 hover:bg-green-800"
+            >
+              <CalendarDays size={12} /> View in Day / Week / Month calendar
+            </button>
+
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="font-medium text-green-900 text-sm">Time off</h4>
+              <button onClick={() => setTimeOffOpen(true)} className="flex items-center gap-1 text-xs text-green-700 border border-green-100 px-2.5 py-1.5 rounded-md hover:bg-green-50">
+                <Plus size={12} /> Book time off
+              </button>
+            </div>
+            <div className="overflow-x-auto border border-gray-100 rounded-md mb-6">
+              <table className="w-full text-sm min-w-[420px]">
+                <thead className="bg-green-50 text-green-700 text-xs uppercase tracking-wide">
+                  <tr>
+                    <th className="text-left px-3 py-2">From</th>
+                    <th className="text-left px-3 py-2">To</th>
+                    <th className="text-left px-3 py-2">Reason</th>
+                    <th className="text-left px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {myTimeOff.length === 0 && (
+                    <tr><td colSpan={4} className="px-3 py-3 text-green-600 text-center text-xs">No time off booked.</td></tr>
+                  )}
+                  {myTimeOff.map((o) => (
+                    <tr key={o.id} className="border-t border-gray-100">
+                      <td className="px-3 py-2 text-green-700 whitespace-nowrap">{o.startDate}</td>
+                      <td className="px-3 py-2 text-green-700 whitespace-nowrap">{o.endDate}</td>
+                      <td className="px-3 py-2 text-green-700">{o.reason || "—"}</td>
+                      <td className="px-3 py-2">
+                        <button onClick={() => removeTimeOff(o.id)} className="text-green-600 hover:text-red-500" title="Remove this time off">
+                          <Trash2 size={13} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {timeOffOpen && (
+              <div className="border border-green-100 rounded-md p-3 mb-6 bg-green-50 space-y-3">
+                <Field label="From">
+                  <input type="date" className={inputCls} value={timeOffForm.startDate} onChange={(e) => setTimeOffForm({ ...timeOffForm, startDate: e.target.value })} />
+                </Field>
+                <Field label="To">
+                  <input type="date" className={inputCls} value={timeOffForm.endDate} onChange={(e) => setTimeOffForm({ ...timeOffForm, endDate: e.target.value })} />
+                </Field>
+                <Field label="Reason (optional)">
+                  <input className={inputCls} value={timeOffForm.reason} onChange={(e) => setTimeOffForm({ ...timeOffForm, reason: e.target.value })} placeholder="e.g. Annual leave" />
+                </Field>
+                <div className="flex gap-2">
+                  <button onClick={() => setTimeOffOpen(false)} className="flex-1 border border-green-200 text-green-700 rounded-md py-2 text-sm hover:bg-white">
+                    Cancel
+                  </button>
+                  <button onClick={() => addTimeOff(detailTrainerId)} className="flex-1 bg-green-700 text-white rounded-md py-2 text-sm hover:bg-green-800">
+                    Save
+                  </button>
+                </div>
+              </div>
+            )}
+
             <h4 className="font-medium text-green-900 text-sm mb-2">Scheduled ({scheduled.length})</h4>
             {sessionTable(scheduled, "No upcoming sessions.")}
             <h4 className="font-medium text-green-900 text-sm mb-2">Completed ({completed.length})</h4>
@@ -1805,19 +1915,22 @@ function Expenses({ expenses, setExpenses }) {
   );
 }
 
-function Schedule({ classes, setClasses, trainers, customers, setCustomers, prefillCustomerId, onPrefillConsumed }) {
+function Schedule({ classes, setClasses, trainers, customers, setCustomers, timeOff, prefillCustomerId, onPrefillConsumed, prefillTrainerFilter, onTrainerPrefillConsumed }) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const activeCustomers = customers.filter((c) => (c.status || "active") === "active");
   const defaultCustomerId = activeCustomers[0]?.id || customers[0]?.id;
   const blankForm = { date: todayISO(), time: "07:00", trainerId: trainers[0]?.id, customerId: defaultCustomerId };
   const [form, setForm] = useState(blankForm);
+  const [extraSessions, setExtraSessions] = useState([]); // additional {date, time} rows for batch-booking
+  const [batchSummary, setBatchSummary] = useState("");
   const [view, setView] = useState("list");
   const [sortDir, setSortDir] = useState("asc");
   const [viewMonth, setViewMonth] = useState({ year: 2026, month: 7 }); // August 2026, 0-indexed
   const [weekStart, setWeekStart] = useState(mondayOfThisWeekISO());
   const [dayDate, setDayDate] = useState(todayISO());
   const [customerFilter, setCustomerFilter] = useState("");
+  const [trainerFilter, setTrainerFilter] = useState("");
   const [customerSearch, setCustomerSearch] = useState("");
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
 
@@ -1836,9 +1949,9 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, pref
     ? selectableCustomers.filter((c) => c.name.toLowerCase().includes(customerSearch.trim().toLowerCase()))
     : selectableCustomers;
 
-  const filteredClasses = customerFilter.trim()
-    ? classes.filter((c) => nameOf(customers, c.customerId).toLowerCase().includes(customerFilter.trim().toLowerCase()))
-    : classes;
+  const filteredClasses = classes
+    .filter((c) => !customerFilter.trim() || nameOf(customers, c.customerId).toLowerCase().includes(customerFilter.trim().toLowerCase()))
+    .filter((c) => !trainerFilter || c.trainerId === trainerFilter);
 
   const exportSessionsCSV = () => {
     const rows = [...filteredClasses]
@@ -1855,6 +1968,8 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, pref
     setEditingId(null);
     const next = presetDate ? { ...blankForm, date: presetDate } : blankForm;
     setForm(next);
+    setExtraSessions([]);
+    setBatchSummary("");
     setCustomerSearch(nameOf(customers, next.customerId));
     setOpen(true);
   };
@@ -1862,6 +1977,8 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, pref
   const startEdit = (c) => {
     setEditingId(c.id);
     setForm({ date: c.date, time: c.time, trainerId: c.trainerId, customerId: c.customerId });
+    setExtraSessions([]);
+    setBatchSummary("");
     setCustomerSearch(nameOf(customers, c.customerId));
     setOpen(true);
   };
@@ -1872,13 +1989,25 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, pref
     if (!prefillCustomerId) return;
     setEditingId(null);
     setForm({ ...blankForm, customerId: prefillCustomerId });
+    setExtraSessions([]);
+    setBatchSummary("");
     setCustomerSearch(nameOf(customers, prefillCustomerId));
     setOpen(true);
     onPrefillConsumed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillCustomerId]);
 
-  // ----- Booking guards -----
+  // Opened from a trainer's "View full schedule" button — filters every view here
+  // down to just that trainer's sessions.
+  useEffect(() => {
+    if (!prefillTrainerFilter) return;
+    setTrainerFilter(prefillTrainerFilter);
+    onTrainerPrefillConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillTrainerFilter]);
+
+  // ----- Booking guards (apply to the primary session; batch rows are checked
+  // individually inside submit()) -----
   // A trainer can't be double-booked at the same date/time (excluding the session
   // being edited, so saving an unrelated change to it doesn't flag itself).
   const trainerConflict = classes.some(
@@ -1897,7 +2026,11 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, pref
     if (original && original.customerId === form.customerId) return false;
     return true;
   })();
-  const canSubmit = !trainerConflict && !customerOutOfClasses;
+  // A trainer can't be booked on a day they've booked off.
+  const trainerOnLeave = (timeOff || []).some(
+    (o) => o.trainerId === form.trainerId && form.date >= o.startDate && form.date <= o.endDate
+  );
+  const canSubmit = !trainerConflict && !customerOutOfClasses && !trainerOnLeave;
 
   // Adjusts a customer's classesRemaining by delta (e.g. -1 to consume a class on
   // booking, +1 to refund it if the booking is cancelled or reassigned). Leaves
@@ -1914,20 +2047,84 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, pref
     );
   };
 
+  // Previous/next session for whichever trainer + date/time is currently selected —
+  // shown in the modal so staff can judge travel time between sessions.
+  const trainerNeighborSessions = (() => {
+    if (!form.trainerId) return { prev: null, next: null };
+    const key = `${form.date}${form.time}`;
+    const sameTrainer = classes
+      .filter((c) => c.trainerId === form.trainerId && c.id !== editingId)
+      .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+    let prev = null;
+    let next = null;
+    for (const c of sameTrainer) {
+      const k = `${c.date}${c.time}`;
+      if (k < key) prev = c;
+      if (k > key && !next) next = c;
+    }
+    return { prev, next };
+  })();
+
+  const addExtraSession = () => {
+    setExtraSessions((rows) => [...rows, { date: form.date, time: form.time }]);
+  };
+  const updateExtraSession = (idx, patch) => {
+    setExtraSessions((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  };
+  const removeExtraSession = (idx) => {
+    setExtraSessions((rows) => rows.filter((_, i) => i !== idx));
+  };
+
   const submit = () => {
-    if (!canSubmit) return;
     if (editingId) {
+      if (!canSubmit) return;
       const original = classes.find((c) => c.id === editingId);
       setClasses((cs) => cs.map((c) => (c.id === editingId ? { ...c, ...form } : c)));
       if (original && original.customerId !== form.customerId) {
         adjustCustomerClasses(original.customerId, 1); // refund the old customer's slot
         adjustCustomerClasses(form.customerId, -1); // consume the new customer's slot
       }
-    } else {
-      setClasses((cs) => [...cs, { id: uid("cl"), status: "scheduled", ...form }]);
-      adjustCustomerClasses(form.customerId, -1);
+      setOpen(false);
+      return;
     }
-    setOpen(false);
+
+    // New booking(s): the primary session plus any extra rows queued up, all for
+    // the same trainer + customer. Each is validated independently — a trainer
+    // double-booked slot, a day they're off, or running out of classes skips just
+    // that row rather than blocking the whole batch.
+    const customer = customers.find((c) => c.id === form.customerId);
+    const remainingCap = customer && !Number.isNaN(Number(customer.classesRemaining)) ? Number(customer.classesRemaining) : Infinity;
+    const candidates = [{ date: form.date, time: form.time }, ...extraSessions];
+    const occupied = new Set();
+    const toCreate = [];
+    let skipped = 0;
+
+    candidates.forEach(({ date, time }) => {
+      if (!date || !time) { skipped++; return; }
+      const key = `${date}|${time}`;
+      const busy = classes.some((c) => c.trainerId === form.trainerId && c.date === date && c.time === time) || occupied.has(key);
+      const onLeave = (timeOff || []).some((o) => o.trainerId === form.trainerId && date >= o.startDate && date <= o.endDate);
+      if (busy || onLeave || toCreate.length >= remainingCap) { skipped++; return; }
+      occupied.add(key);
+      toCreate.push({ id: uid("cl"), status: "scheduled", date, time, trainerId: form.trainerId, customerId: form.customerId });
+    });
+
+    if (toCreate.length) {
+      setClasses((cs) => [...cs, ...toCreate]);
+      adjustCustomerClasses(form.customerId, -toCreate.length);
+    }
+
+    if (candidates.length > 1 || skipped > 0) {
+      setBatchSummary(
+        `Added ${toCreate.length} session${toCreate.length === 1 ? "" : "s"}${skipped ? `, skipped ${skipped} (conflict, trainer off, or no classes left)` : ""}.`
+      );
+    }
+
+    if (toCreate.length > 0 && skipped === 0) {
+      setOpen(false);
+    }
+    // If anything was skipped, keep the dialog open so staff can see the summary
+    // and adjust before closing — closing happens via the Close button in that case.
   };
 
   const removeClass = (id) => {
@@ -2073,6 +2270,15 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, pref
           </button>
         )}
         {customerFilter && <span className="text-xs text-green-600">({filteredClasses.length} session{filteredClasses.length === 1 ? "" : "s"})</span>}
+        <select className={`${inputCls} w-auto`} value={trainerFilter} onChange={(e) => setTrainerFilter(e.target.value)}>
+          <option value="">All trainers</option>
+          {trainers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        {trainerFilter && (
+          <button onClick={() => setTrainerFilter("")} className="flex items-center gap-1 text-xs text-green-600 hover:text-green-900 underline">
+            <X size={12} /> Clear trainer
+          </button>
+        )}
       </div>
 
       {view === "list" && (
@@ -2335,6 +2541,26 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, pref
               <AlertTriangle size={13} /> This trainer already has a session at this date and time.
             </div>
           )}
+          {!trainerConflict && trainerOnLeave && (
+            <div className="flex items-center gap-1 text-xs bg-red-50 text-red-600 rounded-md px-3 py-2 mb-3">
+              <AlertTriangle size={13} /> This trainer has booked time off covering this date.
+            </div>
+          )}
+          {(trainerNeighborSessions.prev || trainerNeighborSessions.next) && (
+            <div className="text-xs bg-green-50 text-green-700 rounded-md px-3 py-2 mb-3 space-y-1">
+              <div className="text-[10px] uppercase tracking-wide text-green-600">This trainer's nearest sessions</div>
+              {trainerNeighborSessions.prev && (
+                <div>
+                  Previous: {trainerNeighborSessions.prev.date} {formatTime12h(trainerNeighborSessions.prev.time)} — {nameOf(customers, trainerNeighborSessions.prev.customerId)} · {locationOf(trainerNeighborSessions.prev.customerId)}
+                </div>
+              )}
+              {trainerNeighborSessions.next && (
+                <div>
+                  Next: {trainerNeighborSessions.next.date} {formatTime12h(trainerNeighborSessions.next.time)} — {nameOf(customers, trainerNeighborSessions.next.customerId)} · {locationOf(trainerNeighborSessions.next.customerId)}
+                </div>
+              )}
+            </div>
+          )}
           <Field label="Customer (active only)">
             <div className="relative">
               <input
@@ -2398,12 +2624,46 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, pref
               </>
             );
           })()}
+
+          {!editingId && (
+            <div className="mb-3">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-green-700">Booking multiple sessions? (e.g. all of a purchased pack)</span>
+              </div>
+              {extraSessions.map((row, i) => (
+                <div key={i} className="flex items-center gap-2 mb-2">
+                  <input type="date" className={inputCls} value={row.date} onChange={(ev) => updateExtraSession(i, { date: ev.target.value })} />
+                  <input type="time" className={inputCls} value={row.time} onChange={(ev) => updateExtraSession(i, { time: ev.target.value })} />
+                  <button type="button" onClick={() => removeExtraSession(i)} className="text-green-600 hover:text-red-500 shrink-0" title="Remove this session">
+                    <X size={16} />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addExtraSession}
+                className="flex items-center gap-1 text-xs text-green-700 border border-green-100 rounded-md px-2.5 py-1.5 hover:bg-green-50"
+              >
+                <Plus size={12} /> Add another session
+              </button>
+              {extraSessions.length > 0 && (
+                <p className="text-[11px] text-green-600 mt-2">
+                  {1 + extraSessions.length} sessions will be scheduled for this trainer and customer. Any that conflict, fall on the trainer's day off, or exceed the customer's remaining classes are skipped automatically.
+                </p>
+              )}
+            </div>
+          )}
+
+          {batchSummary && (
+            <div className="text-xs bg-green-50 text-green-700 rounded-md px-3 py-2 mb-3">{batchSummary}</div>
+          )}
+
           <button
             onClick={submit}
-            disabled={!canSubmit}
+            disabled={extraSessions.length === 0 && !canSubmit}
             className="w-full bg-green-500 text-white rounded-md py-2 text-sm mt-2 hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-green-500"
           >
-            {editingId ? "Save changes" : "Add to schedule"}
+            {editingId ? "Save changes" : extraSessions.length > 0 ? `Add ${1 + extraSessions.length} sessions` : "Add to schedule"}
           </button>
         </Modal>
       )}
@@ -2442,6 +2702,20 @@ function Utilization({ trainers, classes, customers }) {
     : 0;
   const totalCompleted = periodClasses.filter((c) => c.status === "completed").length;
   const totalUpcoming = periodClasses.filter((c) => c.status === "scheduled").length;
+
+  // ----- Daily utilisation: per-day completed-class counts per trainer, within the
+  // selected period above. Only shows days that actually have completed classes,
+  // so an "All time"/large range doesn't render hundreds of empty rows. -----
+  const dailyMap = {};
+  periodClasses
+    .filter((c) => c.status === "completed")
+    .forEach((c) => {
+      if (!dailyMap[c.date]) dailyMap[c.date] = {};
+      dailyMap[c.date][c.trainerId] = (dailyMap[c.date][c.trainerId] || 0) + 1;
+    });
+  const dailyRows = Object.entries(dailyMap)
+    .map(([date, byTrainer]) => ({ date, byTrainer, total: Object.values(byTrainer).reduce((s, n) => s + n, 0) }))
+    .sort((a, b) => b.date.localeCompare(a.date));
 
   // ----- Weekly pattern (its own week navigator, independent of the period above) -----
   const [weekStart, setWeekStart] = useState(mondayOfThisWeekISO());
@@ -2525,6 +2799,35 @@ function Utilization({ trainers, classes, customers }) {
           </Card>
         ))}
       </div>
+
+      <SectionTitle eyebrow="Day by day" title="Daily utilisation" />
+      <Card className="overflow-hidden mb-8">
+        <div className="overflow-auto" style={{ maxHeight: "360px" }}>
+          <table className="w-full text-sm min-w-[520px]">
+            <thead className="bg-green-50 text-green-700 text-xs uppercase tracking-wide sticky top-0 z-10">
+              <tr>
+                <th className="text-left px-4 py-3">Date</th>
+                {trainers.map((t) => <th key={t.id} className="text-left px-4 py-3">{t.name}</th>)}
+                <th className="text-left px-4 py-3">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dailyRows.length === 0 && (
+                <tr><td colSpan={trainers.length + 2} className="px-4 py-6 text-center text-sm text-green-600">No completed classes in this period yet.</td></tr>
+              )}
+              {dailyRows.map((row) => (
+                <tr key={row.date} className="border-t border-gray-100">
+                  <td className="px-4 py-3 text-green-900 whitespace-nowrap">{row.date}</td>
+                  {trainers.map((t) => (
+                    <td key={t.id} className="px-4 py-3 text-green-700">{row.byTrainer[t.id] || 0}</td>
+                  ))}
+                  <td className="px-4 py-3 text-green-900 font-medium">{row.total}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
       <SectionTitle
         eyebrow="Weekly pattern"
@@ -2924,6 +3227,11 @@ export default function App() {
     setBookingForCustomerId(customerId);
     setTab("schedule");
   };
+  const [scheduleTrainerFilter, setScheduleTrainerFilter] = useState(null);
+  const viewTrainerSchedule = (trainerId) => {
+    setScheduleTrainerFilter(trainerId);
+    setTab("schedule");
+  };
   const [session, setSession] = useState(undefined); // undefined = still checking, null = signed out
   const [authTimedOut, setAuthTimedOut] = useState(false);
 
@@ -2948,6 +3256,7 @@ export default function App() {
   const signedIn = !!session;
   const [syncError, setSyncError] = useState("");
   const [trainers, setTrainers] = useSyncedTable("trainers", seedTrainers, signedIn, setSyncError);
+  const [timeOff, setTimeOff] = useSyncedTable("timeOff", seedTimeOff, signedIn, setSyncError);
   const [expenses, setExpenses] = useSyncedTable("expenses", seedExpenses, signedIn, setSyncError);
   const [customers, setCustomers, insertCustomer] = useSyncedTable("customers", seedCustomers, signedIn, setSyncError);
   const [classes, setClasses] = useSyncedTable("classes", seedClasses, signedIn, setSyncError);
@@ -3022,7 +3331,7 @@ export default function App() {
           )}
           {tab === "customers" && <Customers customers={customers} setCustomers={setCustomers} insertCustomer={insertCustomer} payments={payments} setPayments={setPayments} classes={classes} setClasses={setClasses} onBookCustomer={bookCustomer} />}
           {tab === "expenses" && <Expenses expenses={expenses} setExpenses={setExpenses} />}
-          {tab === "trainers" && <Trainers trainers={trainers} setTrainers={setTrainers} classes={classes} customers={customers} />}
+          {tab === "trainers" && <Trainers trainers={trainers} setTrainers={setTrainers} classes={classes} customers={customers} timeOff={timeOff} setTimeOff={setTimeOff} onViewSchedule={viewTrainerSchedule} />}
           {tab === "schedule" && (
             <Schedule
               classes={classes}
@@ -3030,8 +3339,11 @@ export default function App() {
               trainers={trainers}
               customers={customers}
               setCustomers={setCustomers}
+              timeOff={timeOff}
               prefillCustomerId={bookingForCustomerId}
               onPrefillConsumed={() => setBookingForCustomerId(null)}
+              prefillTrainerFilter={scheduleTrainerFilter}
+              onTrainerPrefillConsumed={() => setScheduleTrainerFilter(null)}
             />
           )}
           {tab === "utilization" && <Utilization trainers={trainers} classes={classes} customers={customers} />}
