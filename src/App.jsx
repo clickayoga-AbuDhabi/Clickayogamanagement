@@ -633,7 +633,7 @@ function Dashboard({ trainers, customers, classes, payments }) {
   );
 }
 
-function Customers({ customers, setCustomers, insertCustomer, payments, setPayments, classes, setClasses, onBookCustomer }) {
+function Customers({ customers, setCustomers, insertCustomer, payments, setPayments, classes, setClasses, trainers, onBookCustomer }) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [source, setSource] = useState("new"); // "new" or "existing" — only relevant while adding
@@ -1307,6 +1307,9 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
         if (!person) return null;
         const bookingIds = new Set(person.bookings.map((b) => b.id));
         const personPayments = payments.filter((p) => bookingIds.has(p.customerId)).sort((a, b) => b.date.localeCompare(a.date));
+        const personClasses = classes.filter((c) => bookingIds.has(c.customerId)).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+        const personScheduled = personClasses.filter((c) => c.status === "scheduled");
+        const personCompleted = [...personClasses].reverse().filter((c) => c.status === "completed");
 
         const editBooking = (b) => {
           setDetailPerson(null);
@@ -1389,6 +1392,56 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
                           </button>
                         </div>
                       </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <h4 className="font-medium text-green-900 text-sm mb-2">Scheduled classes ({personScheduled.length})</h4>
+            <div className="overflow-x-auto border border-gray-100 rounded-md mb-6">
+              <table className="w-full text-sm min-w-[420px]">
+                <thead className="bg-green-50 text-green-700 text-xs uppercase tracking-wide">
+                  <tr>
+                    <th className="text-left px-3 py-2">Date</th>
+                    <th className="text-left px-3 py-2">Time</th>
+                    <th className="text-left px-3 py-2">Trainer</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {personScheduled.length === 0 && (
+                    <tr><td colSpan={3} className="px-3 py-3 text-green-600 text-center text-xs">No upcoming sessions.</td></tr>
+                  )}
+                  {personScheduled.map((c) => (
+                    <tr key={c.id} className="border-t border-gray-100">
+                      <td className="px-3 py-2 text-green-700 whitespace-nowrap">{c.date}</td>
+                      <td className="px-3 py-2 text-green-700 whitespace-nowrap">{formatTime12h(c.time)}</td>
+                      <td className="px-3 py-2 text-green-700 whitespace-nowrap">{trainers.find((t) => t.id === c.trainerId)?.name || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <h4 className="font-medium text-green-900 text-sm mb-2">Completed classes ({personCompleted.length})</h4>
+            <div className="overflow-x-auto border border-gray-100 rounded-md mb-6">
+              <table className="w-full text-sm min-w-[420px]">
+                <thead className="bg-green-50 text-green-700 text-xs uppercase tracking-wide">
+                  <tr>
+                    <th className="text-left px-3 py-2">Date</th>
+                    <th className="text-left px-3 py-2">Time</th>
+                    <th className="text-left px-3 py-2">Trainer</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {personCompleted.length === 0 && (
+                    <tr><td colSpan={3} className="px-3 py-3 text-green-600 text-center text-xs">No completed sessions yet.</td></tr>
+                  )}
+                  {personCompleted.map((c) => (
+                    <tr key={c.id} className="border-t border-gray-100">
+                      <td className="px-3 py-2 text-green-700 whitespace-nowrap">{c.date}</td>
+                      <td className="px-3 py-2 text-green-700 whitespace-nowrap">{formatTime12h(c.time)}</td>
+                      <td className="px-3 py-2 text-green-700 whitespace-nowrap">{trainers.find((t) => t.id === c.trainerId)?.name || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -3496,7 +3549,7 @@ export default function App() {
           {tab === "dashboard" && (
             <Dashboard trainers={trainers} customers={customers} classes={classes} payments={payments} />
           )}
-          {tab === "customers" && <Customers customers={customers} setCustomers={setCustomers} insertCustomer={insertCustomer} payments={payments} setPayments={setPayments} classes={classes} setClasses={setClasses} onBookCustomer={bookCustomer} />}
+          {tab === "customers" && <Customers customers={customers} setCustomers={setCustomers} insertCustomer={insertCustomer} payments={payments} setPayments={setPayments} classes={classes} setClasses={setClasses} trainers={trainers} onBookCustomer={bookCustomer} />}
           {tab === "expenses" && <Expenses expenses={expenses} setExpenses={setExpenses} />}
           {tab === "trainers" && <Trainers trainers={trainers} setTrainers={setTrainers} classes={classes} customers={customers} timeOff={timeOff} setTimeOff={setTimeOff} onViewSchedule={viewTrainerSchedule} />}
           {tab === "schedule" && (
