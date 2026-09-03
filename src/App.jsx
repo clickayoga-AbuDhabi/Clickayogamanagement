@@ -197,14 +197,14 @@ const seedCustomers = [
 ];
 
 const seedClasses = [
-  { id: "cl1", date: "2026-08-03", time: "07:00", trainerId: "t1", customerId: "c1", status: "completed" },
-  { id: "cl2", date: "2026-08-03", time: "18:00", trainerId: "t2", customerId: "c2", status: "completed" },
-  { id: "cl3", date: "2026-08-05", time: "07:00", trainerId: "t1", customerId: "c4", status: "completed" },
-  { id: "cl4", date: "2026-08-06", time: "17:00", trainerId: "t2", customerId: "c3", status: "completed" },
-  { id: "cl5", date: "2026-08-10", time: "07:00", trainerId: "t1", customerId: "c1", status: "completed" },
-  { id: "cl6", date: "2026-08-12", time: "18:00", trainerId: "t2", customerId: "c2", status: "completed" },
-  { id: "cl7", date: "2026-08-22", time: "07:00", trainerId: "t1", customerId: "c1", status: "scheduled" },
-  { id: "cl8", date: "2026-08-26", time: "18:00", trainerId: "t2", customerId: "c4", status: "scheduled" },
+  { id: "cl1", date: "2026-08-03", time: "07:00", endTime: "08:00", trainerId: "t1", customerId: "c1", status: "completed" },
+  { id: "cl2", date: "2026-08-03", time: "18:00", endTime: "19:00", trainerId: "t2", customerId: "c2", status: "completed" },
+  { id: "cl3", date: "2026-08-05", time: "07:00", endTime: "08:00", trainerId: "t1", customerId: "c4", status: "completed" },
+  { id: "cl4", date: "2026-08-06", time: "17:00", endTime: "18:00", trainerId: "t2", customerId: "c3", status: "completed" },
+  { id: "cl5", date: "2026-08-10", time: "07:00", endTime: "08:00", trainerId: "t1", customerId: "c1", status: "completed" },
+  { id: "cl6", date: "2026-08-12", time: "18:00", endTime: "19:00", trainerId: "t2", customerId: "c2", status: "completed" },
+  { id: "cl7", date: "2026-08-22", time: "07:00", endTime: "08:00", trainerId: "t1", customerId: "c1", status: "scheduled" },
+  { id: "cl8", date: "2026-08-26", time: "18:00", endTime: "19:00", trainerId: "t2", customerId: "c4", status: "scheduled" },
 ];
 
 const seedPayments = [
@@ -249,6 +249,24 @@ const formatTime12h = (time24) => {
   if (h === 0) h = 12;
   return `${h}:${m} ${ampm}`;
 };
+
+// Session start/end time helpers — used for double-booking checks and for turning
+// completed sessions into hours for utilisation tracking.
+const parseHM = (t) => {
+  const [h, m] = (t || "0:0").split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+// Two time ranges on the same day overlap if one starts before the other ends.
+const rangesOverlap = (aStart, aEnd, bStart, bEnd) => aStart < bEnd && bStart < aEnd;
+// A session without an end time (legacy data from before this field existed)
+// defaults to a 1-hour duration for both overlap checks and hour totals.
+const sessionEndMinutes = (cls) => {
+  const start = parseHM(cls.time);
+  if (!cls.endTime) return start + 60;
+  const end = parseHM(cls.endTime);
+  return end > start ? end : start + 60;
+};
+const sessionDurationHours = (cls) => (sessionEndMinutes(cls) - parseHM(cls.time)) / 60;
 
 const AED = (n) => `AED ${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
@@ -520,13 +538,16 @@ function Dashboard({ trainers, customers, classes, payments }) {
   const feeBreakdown = Object.entries(feeMap).sort((a, b) => b[1] - a[1]);
 
   const commissions = trainers.map((t) => {
-    const completed = periodClasses.filter((c) => c.trainerId === t.id && c.status === "completed").length;
+    const completedClasses = periodClasses.filter((c) => c.trainerId === t.id && c.status === "completed");
+    const completed = completedClasses.length;
+    const completedHours = completedClasses.reduce((s, c) => s + sessionDurationHours(c), 0);
     const commissionEarned = trainerCommission(t, periodClasses, customers);
     return {
       trainer: t,
       completed,
+      completedHours,
       commissionEarned,
-      progress: t.monthlyTarget ? completed / t.monthlyTarget : 0,
+      progress: t.monthlyTarget ? completedHours / t.monthlyTarget : 0,
     };
   });
   const totalCommission = commissions.reduce((s, c) => s + c.commissionEarned, 0);
@@ -598,7 +619,7 @@ function Dashboard({ trainers, customers, classes, payments }) {
             <CommissionRing pct={c.progress} />
             <div className="flex-1">
               <div className="font-medium text-green-900">{c.trainer.name}</div>
-              <div className="text-xs text-green-600 mb-2">{c.completed} of {c.trainer.monthlyTarget} classes</div>
+              <div className="text-xs text-green-600 mb-2">{c.completedHours.toFixed(1)} of {c.trainer.monthlyTarget} hours ({c.completed} classes)</div>
               <div className="text-lg font-serif text-green-900">{AED(c.commissionEarned)}</div>
               <div className="text-[11px] text-green-600">commission only — base pay excluded</div>
             </div>
@@ -629,7 +650,6 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
     numberOfClasses: 10,
     freeClasses: 0,
     priceInput: 150,
-    classesRemaining: 10,
     taxCharged: false,
     taxPercent: 5,
     paymentMethod: "cash",
@@ -664,12 +684,24 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   // name must not make the app think it's a different person. Legacy rows saved
   // before personId existed fall back to grouping by name until they're touched again.
   const personKey = (c) => c.personId || c.name;
+
+  // Class counts are always computed live from the actual schedule — never stored —
+  // so there's no separate bookkeeping that can drift out of sync with reality.
+  // "Remaining" = subscribed minus completed (per the studio's own definition);
+  // "Unscheduled" = subscribed minus completed minus already-scheduled, which is
+  // the true bookable capacity left and what Schedule's booking guard checks.
+  const totalSubscribed = (b) => (b.unlimited ? Infinity : (Number(b.numberOfClasses) || 0) + (Number(b.freeClasses) || 0));
+  const completedCountFor = (bookingId) => classes.filter((c) => c.customerId === bookingId && c.status === "completed").length;
+  const scheduledCountFor = (bookingId) => classes.filter((c) => c.customerId === bookingId && c.status === "scheduled").length;
+  const remainingCountFor = (b) => (b.unlimited ? "—" : Math.max(0, totalSubscribed(b) - completedCountFor(b.id)));
+  const unscheduledCountFor = (b) => (b.unlimited ? Infinity : Math.max(0, totalSubscribed(b) - completedCountFor(b.id) - scheduledCountFor(b.id)));
+
   const groupedByPerson = {};
   customers.forEach((c) => { const k = personKey(c); (groupedByPerson[k] = groupedByPerson[k] || []).push(c); });
   const allPeople = Object.entries(groupedByPerson).map(([key, bookings]) => {
     const sortedBookings = [...bookings].sort((a, b) => b.joined.localeCompare(a.joined));
     const latest = sortedBookings[0];
-    const totalRemaining = bookings.reduce((s, b) => s + (Number(b.classesRemaining) || 0), 0);
+    const totalRemaining = bookings.reduce((s, b) => s + (b.unlimited ? 0 : Number(remainingCountFor(b))), 0);
     const hasUnlimited = bookings.some((b) => b.unlimited);
     return { key, bookings: sortedBookings, latest, totalRemaining, hasUnlimited, status: latest.status || "active" };
   });
@@ -684,7 +716,16 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
 
   const peopleFiltered = allPeople
     .filter((p) => !isFiltered || p.bookings.some((b) => (!joinedFrom || b.joined >= joinedFrom) && (!joinedTo || b.joined <= joinedTo)))
-    .filter((p) => !nameSearch.trim() || p.latest.name.toLowerCase().includes(nameSearch.trim().toLowerCase()))
+    .filter((p) => {
+      const q = nameSearch.trim().toLowerCase();
+      if (!q) return true;
+      const { name, email, phone } = p.latest;
+      return (
+        (name || "").toLowerCase().includes(q) ||
+        (email || "").toLowerCase().includes(q) ||
+        (phone || "").toLowerCase().includes(q)
+      );
+    })
     .sort((a, b) => {
       const cmp = sortComparators[sortBy](a, b);
       return sortDir === "asc" ? cmp : -cmp;
@@ -730,7 +771,6 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
       numberOfClasses: c.numberOfClasses ?? 10,
       freeClasses: c.freeClasses || 0,
       priceInput: c.unlimited ? Math.round((Number(c.perClassPrice) || 0) * UNLIMITED_ASSUMED_CLASSES) : Number(c.perClassPrice) || 0,
-      classesRemaining: c.classesRemaining,
       taxCharged: existingPayment?.taxCharged || false,
       taxPercent: existingPayment?.taxPercent || 5,
       paymentMethod: existingPayment?.paymentMethod || "cash",
@@ -753,13 +793,11 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   };
 
   const setClassesFor = (numberOfClasses) => {
-    const remaining = (Number(numberOfClasses) || 0) + (Number(form.freeClasses) || 0);
-    setForm({ ...form, numberOfClasses, classesRemaining: remaining });
+    setForm({ ...form, numberOfClasses });
   };
 
   const setFreeClassesFor = (freeClasses) => {
-    const remaining = (Number(form.numberOfClasses) || 0) + (Number(freeClasses) || 0);
-    setForm({ ...form, freeClasses, classesRemaining: remaining });
+    setForm({ ...form, freeClasses });
   };
 
   const markPaidInFull = () => setForm({ ...form, amountPaid: grandTotal });
@@ -788,7 +826,6 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
       numberOfClasses: form.unlimited ? null : Number(form.numberOfClasses) || 0,
       freeClasses,
       perClassPrice: storedPerClassPrice,
-      classesRemaining: form.unlimited ? "—" : Number(form.classesRemaining) || 0,
     };
 
     const classesLabel = form.unlimited ? "Unlimited monthly" : `${Number(form.numberOfClasses) || 0} classes`;
@@ -887,7 +924,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   const exportCustomersCSV = () => {
     downloadCSV(
       `click-a-yoga-customers-${new Date().toISOString().slice(0, 10)}.csv`,
-      ["Name", "Phone", "Email", "Location", "Nationality", "Class Type", "Classes", "Free Classes", "Per-Class Price", "Classes Remaining", "Joined"],
+      ["Name", "Phone", "Email", "Location", "Nationality", "Class Type", "Subscribed", "Free Classes", "Per-Class Price", "Completed", "Scheduled", "Remaining", "Joined"],
       sorted.map((c) => [
         c.name,
         c.phone,
@@ -898,7 +935,9 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
         c.unlimited ? "Unlimited" : c.numberOfClasses,
         c.freeClasses || 0,
         AED(c.perClassPrice || 0),
-        c.classesRemaining,
+        completedCountFor(c.id),
+        scheduledCountFor(c.id),
+        remainingCountFor(c),
         c.joined,
       ])
     );
@@ -957,7 +996,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
             type="text"
             value={nameSearch}
             onChange={(e) => setNameSearch(e.target.value)}
-            placeholder="Search by customer name…"
+            placeholder="Search by name, email, or phone…"
             className={`${inputCls} w-auto pl-8`}
           />
         </div>
@@ -1128,7 +1167,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
             <select
               className={inputCls}
               value={form.unlimited ? "unlimited" : "fixed"}
-              onChange={(e) => setForm({ ...form, unlimited: e.target.value === "unlimited", classesRemaining: e.target.value === "unlimited" ? "—" : Number(form.numberOfClasses) || 0 })}
+              onChange={(e) => setForm({ ...form, unlimited: e.target.value === "unlimited" })}
             >
               <option value="fixed">Fixed number of classes</option>
               <option value="unlimited">Unlimited (monthly)</option>
@@ -1147,16 +1186,6 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
           <Field label={form.unlimited ? "Price per month (AED)" : "Price per class (AED)"}>
             <input type="number" className={inputCls} value={form.priceInput} onChange={(e) => setForm({ ...form, priceInput: e.target.value })} />
           </Field>
-          {!form.unlimited && (
-            <Field label="Classes remaining">
-              <input
-                type="number"
-                className={inputCls}
-                value={form.classesRemaining}
-                onChange={(e) => setForm({ ...form, classesRemaining: Number(e.target.value) })}
-              />
-            </Field>
-          )}
 
           <div className="flex items-center justify-between text-sm bg-green-50 text-green-700 rounded-md px-3 py-2 mb-1">
             <span>Subtotal</span>
@@ -1307,11 +1336,13 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
               </div>
             </div>
             <div className="overflow-x-auto mb-6 border border-gray-100 rounded-md">
-              <table className="w-full text-sm min-w-[520px]">
+              <table className="w-full text-sm min-w-[680px]">
                 <thead className="bg-green-50 text-green-700 text-xs uppercase tracking-wide">
                   <tr>
                     <th className="text-left px-3 py-2">Type</th>
-                    <th className="text-left px-3 py-2">Classes</th>
+                    <th className="text-left px-3 py-2">Subscribed</th>
+                    <th className="text-left px-3 py-2">Completed</th>
+                    <th className="text-left px-3 py-2">Scheduled</th>
                     <th className="text-left px-3 py-2">Remaining</th>
                     <th className="text-left px-3 py-2">Price</th>
                     <th className="text-left px-3 py-2">Joined</th>
@@ -1325,7 +1356,9 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
                       <td className="px-3 py-2 text-green-700 whitespace-nowrap">
                         {b.unlimited ? "Unlimited" : b.numberOfClasses}{b.freeClasses ? ` (+${b.freeClasses} free)` : ""}
                       </td>
-                      <td className="px-3 py-2 text-green-700">{b.classesRemaining}</td>
+                      <td className="px-3 py-2 text-green-700">{completedCountFor(b.id)}</td>
+                      <td className="px-3 py-2 text-green-700">{scheduledCountFor(b.id)}</td>
+                      <td className="px-3 py-2 text-green-700">{remainingCountFor(b)}</td>
                       <td className="px-3 py-2 text-green-700 whitespace-nowrap">{AED(b.perClassPrice || 0)}{b.unlimited ? "/class" : ""}</td>
                       <td className="px-3 py-2 text-green-700 whitespace-nowrap">{b.joined}</td>
                       <td className="px-3 py-2">
@@ -1515,7 +1548,7 @@ function Trainers({ trainers, setTrainers, classes, customers, timeOff, setTimeO
             <div className="grid grid-cols-2 gap-y-1 text-sm text-green-700">
               <span>Base salary</span><span className="text-green-900">{AED(t.baseSalary)}/mo</span>
               <span>Base commission</span><span className="text-green-900">{Math.round(t.commissionRate * 100)}% (≤50/mo) · 30% (51–99) · 40% (100+)</span>
-              <span>Monthly target</span><span className="text-green-900">{t.monthlyTarget} classes</span>
+              <span>Monthly target</span><span className="text-green-900">{t.monthlyTarget} hours</span>
             </div>
             <div className="text-[11px] text-green-600 mt-2">Group classes always pay a flat 10%, regardless of volume.</div>
             {t.authEmail ? (
@@ -1677,7 +1710,7 @@ function Trainers({ trainers, setTrainers, classes, customers, timeOff, setTimeO
           <Field label="Base commission rate (% — applies at 50 classes/month or fewer)">
             <input type="number" className={inputCls} value={form.commissionRate * 100} onChange={(e) => setForm({ ...form, commissionRate: Number(e.target.value) / 100 })} />
           </Field>
-          <Field label="Monthly target (classes)">
+          <Field label="Monthly target (hours)">
             <input type="number" className={inputCls} value={form.monthlyTarget} onChange={(e) => setForm({ ...form, monthlyTarget: Number(e.target.value) })} />
           </Field>
           <Field label="Portal login email (optional)">
@@ -1976,9 +2009,9 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
   const [editingId, setEditingId] = useState(null);
   const activeCustomers = customers.filter((c) => (c.status || "active") === "active");
   const defaultCustomerId = activeCustomers[0]?.id || customers[0]?.id;
-  const blankForm = { date: todayISO(), time: "07:00", trainerId: trainers[0]?.id, customerId: defaultCustomerId };
+  const blankForm = { date: todayISO(), time: "07:00", endTime: "08:00", trainerId: trainers[0]?.id, customerId: defaultCustomerId };
   const [form, setForm] = useState(blankForm);
-  const [extraSessions, setExtraSessions] = useState([]); // additional {date, time} rows for batch-booking
+  const [extraSessions, setExtraSessions] = useState([]); // additional {date, time, endTime} rows for batch-booking
   const [batchSummary, setBatchSummary] = useState("");
   const [view, setView] = useState("list");
   const [sortDir, setSortDir] = useState("asc");
@@ -1991,8 +2024,31 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
 
   const nameOf = (list, id) => list.find((x) => x.id === id)?.name || "—";
+  // A stable color per trainer (by their position in the trainers list) so calendar
+  // chips are visually distinguishable by trainer at a glance, not just by status.
+  const TRAINER_PALETTE = [
+    { bg: "bg-blue-100", text: "text-blue-700", bar: "border-blue-500" },
+    { bg: "bg-purple-100", text: "text-purple-700", bar: "border-purple-500" },
+    { bg: "bg-amber-100", text: "text-amber-700", bar: "border-amber-500" },
+    { bg: "bg-pink-100", text: "text-pink-700", bar: "border-pink-500" },
+    { bg: "bg-teal-100", text: "text-teal-700", bar: "border-teal-500" },
+    { bg: "bg-indigo-100", text: "text-indigo-700", bar: "border-indigo-500" },
+    { bg: "bg-rose-100", text: "text-rose-700", bar: "border-rose-500" },
+    { bg: "bg-cyan-100", text: "text-cyan-700", bar: "border-cyan-500" },
+  ];
+  const trainerColor = (trainerId) => {
+    const idx = trainers.findIndex((t) => t.id === trainerId);
+    return TRAINER_PALETTE[idx >= 0 ? idx % TRAINER_PALETTE.length : 0];
+  };
   const locationOf = (customerId) => customers.find((c) => c.id === customerId)?.location || "—";
   const firstName = (name) => name.replace(/^Dr\.\s*/i, "").split(" ")[0];
+
+  // Same computed-capacity model as the Customers tab: never a stored number, always
+  // derived live from the actual schedule, so it can't drift out of sync.
+  const totalSubscribed = (b) => (b.unlimited ? Infinity : (Number(b.numberOfClasses) || 0) + (Number(b.freeClasses) || 0));
+  const completedCountFor = (bookingId) => classes.filter((c) => c.customerId === bookingId && c.status === "completed").length;
+  const scheduledCountFor = (bookingId) => classes.filter((c) => c.customerId === bookingId && c.status === "scheduled").length;
+  const unscheduledCountFor = (b) => (b.unlimited ? Infinity : Math.max(0, totalSubscribed(b) - completedCountFor(b.id) - scheduledCountFor(b.id)));
 
   // The customer picker only offers active customers, but if editing (or a prefilled
   // booking) points at a now-inactive one, that one stays selectable too so the
@@ -2000,7 +2056,12 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
   const selectableCustomers = customers.filter(
     (c) => (c.status || "active") === "active" || c.id === form.customerId
   );
-  const pickerLabel = (c) => `${c.name} — ${c.classesRemaining === "—" ? "Unlimited" : `${c.classesRemaining} left`}`;
+  const pickerLabel = (c) => {
+    if (c.unlimited) return `${c.name} — Unlimited`;
+    const editingThisOne = editingId && classes.find((x) => x.id === editingId)?.customerId === c.id;
+    const bookable = unscheduledCountFor(c) + (editingThisOne ? 1 : 0);
+    return `${c.name} — ${bookable} unscheduled left`;
+  };
   const filteredCustomerOptions = customerSearch.trim()
     ? selectableCustomers.filter((c) => c.name.toLowerCase().includes(customerSearch.trim().toLowerCase()))
     : selectableCustomers;
@@ -2032,7 +2093,12 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
 
   const startEdit = (c) => {
     setEditingId(c.id);
-    setForm({ date: c.date, time: c.time, trainerId: c.trainerId, customerId: c.customerId });
+    const fallbackEnd = (() => {
+      const [h, m] = c.time.split(":").map(Number);
+      const total = h * 60 + m + 60;
+      return `${String(Math.floor(total / 60) % 24).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+    })();
+    setForm({ date: c.date, time: c.time, endTime: c.endTime || fallbackEnd, trainerId: c.trainerId, customerId: c.customerId });
     setExtraSessions([]);
     setBatchSummary("");
     setCustomerSearch(nameOf(customers, c.customerId));
@@ -2064,44 +2130,39 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
 
   // ----- Booking guards (apply to the primary session; batch rows are checked
   // individually inside submit()) -----
-  // A trainer can't be double-booked at the same date/time (excluding the session
-  // being edited, so saving an unrelated change to it doesn't flag itself).
+  // A trainer can't be double-booked with an overlapping time range on the same
+  // day (excluding the session being edited, so saving an unrelated change to it
+  // doesn't flag itself).
   const trainerConflict = classes.some(
-    (c) => c.id !== editingId && c.trainerId === form.trainerId && c.date === form.date && c.time === form.time
+    (c) =>
+      c.id !== editingId &&
+      c.trainerId === form.trainerId &&
+      c.date === form.date &&
+      rangesOverlap(parseHM(form.time), parseHM(form.endTime), parseHM(c.time), sessionEndMinutes(c))
   );
-  // A customer with 0 classes remaining can't be booked — unless this is an edit to
-  // their own existing session (not a new consumption). classesRemaining can arrive
-  // as either a number (offline demo) or a numeric string (live data, since it's a
-  // text column so it can also hold "—" for unlimited) — Number() handles both.
+  // A customer can't be in two overlapping sessions either, regardless of trainer.
+  const customerConflict = classes.some(
+    (c) =>
+      c.id !== editingId &&
+      c.customerId === form.customerId &&
+      c.date === form.date &&
+      rangesOverlap(parseHM(form.time), parseHM(form.endTime), parseHM(c.time), sessionEndMinutes(c))
+  );
+  // A customer with no unscheduled classes left can't be booked — unless this is an
+  // edit to their own existing session (not a new consumption of capacity).
   const customerOutOfClasses = (() => {
     const customer = customers.find((c) => c.id === form.customerId);
-    if (!customer) return false;
-    const remaining = Number(customer.classesRemaining);
-    if (Number.isNaN(remaining) || remaining > 0) return false;
+    if (!customer || customer.unlimited) return false;
     const original = editingId ? classes.find((c) => c.id === editingId) : null;
-    if (original && original.customerId === form.customerId) return false;
-    return true;
+    const editingOwnSession = original && original.customerId === form.customerId;
+    const bookable = unscheduledCountFor(customer) + (editingOwnSession ? 1 : 0);
+    return bookable <= 0;
   })();
   // A trainer can't be booked on a day they've booked off.
   const trainerOnLeave = (timeOff || []).some(
     (o) => o.trainerId === form.trainerId && form.date >= o.startDate && form.date <= o.endDate
   );
-  const canSubmit = !trainerConflict && !customerOutOfClasses && !trainerOnLeave;
-
-  // Adjusts a customer's classesRemaining by delta (e.g. -1 to consume a class on
-  // booking, +1 to refund it if the booking is cancelled or reassigned). Leaves
-  // unlimited ("—") or otherwise non-numeric values untouched. classesRemaining may
-  // arrive as a string from the live database, so Number() handles both cases.
-  const adjustCustomerClasses = (customerId, delta) => {
-    setCustomers((cs) =>
-      cs.map((c) => {
-        if (c.id !== customerId) return c;
-        const num = Number(c.classesRemaining);
-        if (Number.isNaN(num)) return c;
-        return { ...c, classesRemaining: Math.max(0, num + delta) };
-      })
-    );
-  };
+  const canSubmit = !trainerConflict && !customerConflict && !customerOutOfClasses && !trainerOnLeave;
 
   // Previous/next session for whichever trainer + date/time is currently selected —
   // shown in the modal so staff can judge travel time between sessions.
@@ -2122,7 +2183,7 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
   })();
 
   const addExtraSession = () => {
-    setExtraSessions((rows) => [...rows, { date: form.date, time: form.time }]);
+    setExtraSessions((rows) => [...rows, { date: form.date, time: form.time, endTime: form.endTime }]);
   };
   const updateExtraSession = (idx, patch) => {
     setExtraSessions((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
@@ -2134,45 +2195,50 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
   const submit = () => {
     if (editingId) {
       if (!canSubmit) return;
-      const original = classes.find((c) => c.id === editingId);
       setClasses((cs) => cs.map((c) => (c.id === editingId ? { ...c, ...form } : c)));
-      if (original && original.customerId !== form.customerId) {
-        adjustCustomerClasses(original.customerId, 1); // refund the old customer's slot
-        adjustCustomerClasses(form.customerId, -1); // consume the new customer's slot
-      }
       setOpen(false);
       return;
     }
 
     // New booking(s): the primary session plus any extra rows queued up, all for
-    // the same trainer + customer. Each is validated independently — a trainer
-    // double-booked slot, a day they're off, or running out of classes skips just
-    // that row rather than blocking the whole batch.
+    // the same trainer + customer. Each is validated independently — an overlapping
+    // slot for the trainer or customer, a day the trainer's off, or running out of
+    // unscheduled classes skips just that row rather than blocking the whole batch.
     const customer = customers.find((c) => c.id === form.customerId);
-    const remainingCap = customer && !Number.isNaN(Number(customer.classesRemaining)) ? Number(customer.classesRemaining) : Infinity;
-    const candidates = [{ date: form.date, time: form.time }, ...extraSessions];
-    const occupied = new Set();
+    const capacity = customer && !customer.unlimited ? unscheduledCountFor(customer) : Infinity;
+    const candidates = [{ date: form.date, time: form.time, endTime: form.endTime }, ...extraSessions];
+    const occupiedTrainer = []; // {date, start, end} already claimed in this batch, by trainer
+    const occupiedCustomer = []; // same, by customer
     const toCreate = [];
     let skipped = 0;
 
-    candidates.forEach(({ date, time }) => {
-      if (!date || !time) { skipped++; return; }
-      const key = `${date}|${time}`;
-      const busy = classes.some((c) => c.trainerId === form.trainerId && c.date === date && c.time === time) || occupied.has(key);
+    candidates.forEach(({ date, time, endTime }) => {
+      if (!date || !time || !endTime) { skipped++; return; }
+      const start = parseHM(time);
+      const end = parseHM(endTime);
+      if (end <= start) { skipped++; return; }
+
+      const trainerBusy =
+        classes.some((c) => c.trainerId === form.trainerId && c.date === date && rangesOverlap(start, end, parseHM(c.time), sessionEndMinutes(c))) ||
+        occupiedTrainer.some((o) => o.date === date && rangesOverlap(start, end, o.start, o.end));
+      const customerBusy =
+        classes.some((c) => c.customerId === form.customerId && c.date === date && rangesOverlap(start, end, parseHM(c.time), sessionEndMinutes(c))) ||
+        occupiedCustomer.some((o) => o.date === date && rangesOverlap(start, end, o.start, o.end));
       const onLeave = (timeOff || []).some((o) => o.trainerId === form.trainerId && date >= o.startDate && date <= o.endDate);
-      if (busy || onLeave || toCreate.length >= remainingCap) { skipped++; return; }
-      occupied.add(key);
-      toCreate.push({ id: uid("cl"), status: "scheduled", date, time, trainerId: form.trainerId, customerId: form.customerId });
+
+      if (trainerBusy || customerBusy || onLeave || toCreate.length >= capacity) { skipped++; return; }
+      occupiedTrainer.push({ date, start, end });
+      occupiedCustomer.push({ date, start, end });
+      toCreate.push({ id: uid("cl"), status: "scheduled", date, time, endTime, trainerId: form.trainerId, customerId: form.customerId });
     });
 
     if (toCreate.length) {
       setClasses((cs) => [...cs, ...toCreate]);
-      adjustCustomerClasses(form.customerId, -toCreate.length);
     }
 
     if (candidates.length > 1 || skipped > 0) {
       setBatchSummary(
-        `Added ${toCreate.length} session${toCreate.length === 1 ? "" : "s"}${skipped ? `, skipped ${skipped} (conflict, trainer off, or no classes left)` : ""}.`
+        `Added ${toCreate.length} session${toCreate.length === 1 ? "" : "s"}${skipped ? `, skipped ${skipped} (overlap, trainer off, or no unscheduled classes left)` : ""}.`
       );
     }
 
@@ -2183,10 +2249,10 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
     // and adjust before closing — closing happens via the Close button in that case.
   };
 
+  // No separate "refund" bookkeeping needed — remaining/unscheduled counts are
+  // always computed live from the classes array, so deleting one just updates them.
   const removeClass = (id) => {
-    const cls = classes.find((c) => c.id === id);
     setClasses((cs) => cs.filter((c) => c.id !== id));
-    if (cls) adjustCustomerClasses(cls.customerId, 1);
   };
 
   // "Cancel session" always asks for confirmation first, then deletes the class
@@ -2281,6 +2347,16 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
                 <Grid3x3 size={13} /> Month
               </button>
             </div>
+            {(view === "week" || view === "month") && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                {trainers.map((t) => (
+                  <span key={t.id} className="flex items-center gap-1 text-[11px] text-green-700">
+                    <span className={`inline-block w-2.5 h-2.5 rounded-sm ${trainerColor(t.id).bg} border-l-2 ${trainerColor(t.id).bar}`} />
+                    {t.name}
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="flex items-center gap-2">
               {view === "list" && (
                 <button
@@ -2484,10 +2560,10 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
                               <button
                                 key={c.id}
                                 onClick={() => startEdit(c)}
-                                className={`w-full text-left text-[10px] leading-tight px-1.5 py-1 rounded ${
-                                  c.status === "completed" ? "bg-green-100 text-green-700" : "bg-green-50 text-green-700"
+                                className={`w-full text-left text-[10px] leading-tight px-1.5 py-1 rounded border-l-2 ${trainerColor(c.trainerId).bg} ${trainerColor(c.trainerId).text} ${trainerColor(c.trainerId).bar} ${
+                                  c.status === "completed" ? "opacity-60" : ""
                                 }`}
-                                title={`${nameOf(trainers, c.trainerId)} · ${nameOf(customers, c.customerId)} · ${locationOf(c.customerId)}`}
+                                title={`${nameOf(trainers, c.trainerId)} · ${nameOf(customers, c.customerId)} · ${locationOf(c.customerId)} · ${c.status}`}
                               >
                                 <div className="font-medium">{formatTime12h(c.time)} {firstName(nameOf(trainers, c.trainerId))}</div>
                                 <div className="truncate">{nameOf(customers, c.customerId)}</div>
@@ -2540,10 +2616,10 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
                       <button
                         key={c.id}
                         onClick={() => startEdit(c)}
-                        className={`w-full text-left text-[10px] leading-tight px-1.5 py-1 rounded ${
-                          c.status === "completed" ? "bg-green-100 text-green-700" : "bg-green-50 text-green-700"
+                        className={`w-full text-left text-[10px] leading-tight px-1.5 py-1 rounded border-l-2 ${trainerColor(c.trainerId).bg} ${trainerColor(c.trainerId).text} ${trainerColor(c.trainerId).bar} ${
+                          c.status === "completed" ? "opacity-60" : ""
                         }`}
-                        title={`${nameOf(trainers, c.trainerId)} · ${nameOf(customers, c.customerId)} · ${locationOf(c.customerId)}`}
+                        title={`${nameOf(trainers, c.trainerId)} · ${nameOf(customers, c.customerId)} · ${locationOf(c.customerId)} · ${c.status}`}
                       >
                         <div className="truncate font-medium">{formatTime12h(c.time)} {firstName(nameOf(trainers, c.trainerId))}</div>
                         <div className="truncate opacity-70">{locationOf(c.customerId)}</div>
@@ -2584,8 +2660,11 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
           <Field label="Date">
             <input type="date" className={inputCls} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
           </Field>
-          <Field label="Time">
+          <Field label="Session start time">
             <input type="time" className={inputCls} value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} />
+          </Field>
+          <Field label="Session end time">
+            <input type="time" className={inputCls} value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} />
           </Field>
           <Field label="Trainer">
             <select className={inputCls} value={form.trainerId} onChange={(e) => setForm({ ...form, trainerId: e.target.value })}>
@@ -2600,6 +2679,11 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
           {!trainerConflict && trainerOnLeave && (
             <div className="flex items-center gap-1 text-xs bg-red-50 text-red-600 rounded-md px-3 py-2 mb-3">
               <AlertTriangle size={13} /> This trainer has booked time off covering this date.
+            </div>
+          )}
+          {customerConflict && (
+            <div className="flex items-center gap-1 text-xs bg-red-50 text-red-600 rounded-md px-3 py-2 mb-3">
+              <AlertTriangle size={13} /> This customer already has an overlapping session.
             </div>
           )}
           {(trainerNeighborSessions.prev || trainerNeighborSessions.next) && (
@@ -2657,14 +2741,17 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
           {(() => {
             const selectedCustomer = customers.find((c) => c.id === form.customerId);
             if (!selectedCustomer) return null;
-            const remaining = selectedCustomer.classesRemaining;
-            const isLow = !Number.isNaN(Number(remaining)) && Number(remaining) <= 0;
+            const editingOwnSession = editingId && classes.find((c) => c.id === editingId)?.customerId === form.customerId;
+            const bookable = selectedCustomer.unlimited
+              ? "—"
+              : unscheduledCountFor(selectedCustomer) + (editingOwnSession ? 1 : 0);
+            const isLow = bookable !== "—" && bookable <= 0;
             return (
               <>
                 <div className={`flex items-center justify-between text-xs rounded-md px-3 py-2 mb-1 ${isLow ? "bg-red-50 text-red-600" : "bg-green-50 text-green-700"}`}>
                   <span>{selectedCustomer.classType === "group" ? "Group class" : "Private class"}</span>
                   <span className="font-medium">
-                    {remaining === "—" ? "Unlimited" : isLow ? "0 classes left" : `${remaining} classes left`}
+                    {bookable === "—" ? "Unlimited" : isLow ? "0 unscheduled left" : `${bookable} unscheduled left`}
                   </span>
                 </div>
                 {selectedCustomer.location && (
@@ -2674,7 +2761,7 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
                 )}
                 {customerOutOfClasses && (
                   <div className="flex items-center gap-1 text-xs bg-red-50 text-red-600 rounded-md px-3 py-2 mb-3">
-                    <AlertTriangle size={13} /> This customer has no classes remaining.
+                    <AlertTriangle size={13} /> This customer has no unscheduled classes left.
                   </div>
                 )}
               </>
@@ -2690,6 +2777,7 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
                 <div key={i} className="flex items-center gap-2 mb-2">
                   <input type="date" className={inputCls} value={row.date} onChange={(ev) => updateExtraSession(i, { date: ev.target.value })} />
                   <input type="time" className={inputCls} value={row.time} onChange={(ev) => updateExtraSession(i, { time: ev.target.value })} />
+                  <input type="time" className={inputCls} value={row.endTime} onChange={(ev) => updateExtraSession(i, { endTime: ev.target.value })} />
                   <button type="button" onClick={() => removeExtraSession(i)} className="text-green-600 hover:text-red-500 shrink-0" title="Remove this session">
                     <X size={16} />
                   </button>
@@ -2743,13 +2831,16 @@ function Utilization({ trainers, classes, customers }) {
   const periodClasses = classes.filter((c) => inPeriod(c.date));
 
   const commissions = trainers.map((t) => {
-    const completed = periodClasses.filter((c) => c.trainerId === t.id && c.status === "completed").length;
+    const completedClasses = periodClasses.filter((c) => c.trainerId === t.id && c.status === "completed");
+    const completed = completedClasses.length;
+    const completedHours = completedClasses.reduce((s, c) => s + sessionDurationHours(c), 0);
     const commissionEarned = trainerCommission(t, periodClasses, customers);
     return {
       trainer: t,
       completed,
+      completedHours,
       commissionEarned,
-      progress: t.monthlyTarget ? completed / t.monthlyTarget : 0,
+      progress: t.monthlyTarget ? completedHours / t.monthlyTarget : 0,
     };
   });
 
@@ -2759,15 +2850,17 @@ function Utilization({ trainers, classes, customers }) {
   const totalCompleted = periodClasses.filter((c) => c.status === "completed").length;
   const totalUpcoming = periodClasses.filter((c) => c.status === "scheduled").length;
 
-  // ----- Daily utilisation: per-day completed-class counts per trainer, within the
-  // selected period above. Only shows days that actually have completed classes,
-  // so an "All time"/large range doesn't render hundreds of empty rows. -----
+  // ----- Daily utilisation: per-day completed HOURS per trainer (not raw class
+  // counts), within the selected period above — a studio running ~5 hours/day per
+  // trainer works out to the 130-hour monthly target. Only shows days that
+  // actually have completed classes, so an "All time"/large range doesn't render
+  // hundreds of empty rows. -----
   const dailyMap = {};
   periodClasses
     .filter((c) => c.status === "completed")
     .forEach((c) => {
       if (!dailyMap[c.date]) dailyMap[c.date] = {};
-      dailyMap[c.date][c.trainerId] = (dailyMap[c.date][c.trainerId] || 0) + 1;
+      dailyMap[c.date][c.trainerId] = (dailyMap[c.date][c.trainerId] || 0) + sessionDurationHours(c);
     });
   const dailyRows = Object.entries(dailyMap)
     .map(([date, byTrainer]) => ({ date, byTrainer, total: Object.values(byTrainer).reduce((s, n) => s + n, 0) }))
@@ -2843,7 +2936,7 @@ function Utilization({ trainers, classes, customers }) {
             <div className="flex items-center justify-between mb-2">
               <div className="font-medium text-green-900">{c.trainer.name}</div>
               <span className="text-sm text-green-700">
-                {c.completed} / {c.trainer.monthlyTarget} classes · {Math.round(c.progress * 100)}% · {AED(c.commissionEarned)}
+                {c.completedHours.toFixed(1)} / {c.trainer.monthlyTarget} hours ({c.completed} classes) · {Math.round(c.progress * 100)}% · {AED(c.commissionEarned)}
               </span>
             </div>
             <div className="h-2 rounded-full bg-green-100 overflow-hidden">
@@ -2856,7 +2949,7 @@ function Utilization({ trainers, classes, customers }) {
         ))}
       </div>
 
-      <SectionTitle eyebrow="Day by day" title="Daily utilisation" />
+      <SectionTitle eyebrow="Day by day" title="Daily utilisation (hours)" />
       <Card className="overflow-hidden mb-8">
         <div className="overflow-auto" style={{ maxHeight: "360px" }}>
           <table className="w-full text-sm min-w-[520px]">
@@ -2875,9 +2968,9 @@ function Utilization({ trainers, classes, customers }) {
                 <tr key={row.date} className="border-t border-gray-100">
                   <td className="px-4 py-3 text-green-900 whitespace-nowrap">{row.date}</td>
                   {trainers.map((t) => (
-                    <td key={t.id} className="px-4 py-3 text-green-700">{row.byTrainer[t.id] || 0}</td>
+                    <td key={t.id} className="px-4 py-3 text-green-700">{(row.byTrainer[t.id] || 0).toFixed(1)}h</td>
                   ))}
-                  <td className="px-4 py-3 text-green-900 font-medium">{row.total}</td>
+                  <td className="px-4 py-3 text-green-900 font-medium">{row.total.toFixed(1)}h</td>
                 </tr>
               ))}
             </tbody>
