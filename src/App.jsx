@@ -649,6 +649,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
     unlimited: false,
     numberOfClasses: 10,
     freeClasses: 0,
+    remainingAdjustment: 0,
     priceInput: 150,
     taxCharged: false,
     taxPercent: 5,
@@ -690,7 +691,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   // "Remaining" = subscribed minus completed (per the studio's own definition);
   // "Unscheduled" = subscribed minus completed minus already-scheduled, which is
   // the true bookable capacity left and what Schedule's booking guard checks.
-  const totalSubscribed = (b) => (b.unlimited ? Infinity : (Number(b.numberOfClasses) || 0) + (Number(b.freeClasses) || 0));
+  const totalSubscribed = (b) => (b.unlimited ? Infinity : (Number(b.numberOfClasses) || 0) + (Number(b.freeClasses) || 0) + (Number(b.remainingAdjustment) || 0));
   const completedCountFor = (bookingId) => classes.filter((c) => c.customerId === bookingId && c.status === "completed").length;
   const scheduledCountFor = (bookingId) => classes.filter((c) => c.customerId === bookingId && c.status === "scheduled").length;
   const remainingCountFor = (b) => (b.unlimited ? "—" : Math.max(0, totalSubscribed(b) - completedCountFor(b.id)));
@@ -770,6 +771,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
       unlimited: !!c.unlimited,
       numberOfClasses: c.numberOfClasses ?? 10,
       freeClasses: c.freeClasses || 0,
+      remainingAdjustment: c.remainingAdjustment || 0,
       priceInput: c.unlimited ? Math.round((Number(c.perClassPrice) || 0) * UNLIMITED_ASSUMED_CLASSES) : Number(c.perClassPrice) || 0,
       taxCharged: existingPayment?.taxCharged || false,
       taxPercent: existingPayment?.taxPercent || 5,
@@ -825,6 +827,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
       unlimited: form.unlimited,
       numberOfClasses: form.unlimited ? null : Number(form.numberOfClasses) || 0,
       freeClasses,
+      remainingAdjustment: form.unlimited ? 0 : Number(form.remainingAdjustment) || 0,
       perClassPrice: storedPerClassPrice,
     };
 
@@ -917,6 +920,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   const statusBadgeClass = (status) => {
     if (status === "frozen") return "bg-blue-50 text-blue-600";
     if (status === "inactive") return "bg-gray-100 text-gray-600";
+    if (status === "discontinued") return "bg-red-50 text-red-600";
     return "bg-green-100 text-green-700";
   };
   const statusLabel = (status) => (status ? status.charAt(0).toUpperCase() + status.slice(1) : "Active");
@@ -1183,6 +1187,19 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
               <input type="number" className={inputCls} value={form.freeClasses} onChange={(e) => setFreeClassesFor(e.target.value)} />
             </Field>
           )}
+          {!form.unlimited && editingId && (
+            <Field label="Correction to remaining classes (+/-)">
+              <input
+                type="number"
+                className={inputCls}
+                value={form.remainingAdjustment}
+                onChange={(e) => setForm({ ...form, remainingAdjustment: e.target.value })}
+              />
+              <p className="text-[11px] text-green-600 mt-1">
+                Remaining is normally tracked automatically (subscribed − completed). Use this only to correct it — e.g. enter 2 to add 2 classes, or -1 to remove one.
+              </p>
+            </Field>
+          )}
           <Field label={form.unlimited ? "Price per month (AED)" : "Price per class (AED)"}>
             <input type="number" className={inputCls} value={form.priceInput} onChange={(e) => setForm({ ...form, priceInput: e.target.value })} />
           </Field>
@@ -1321,6 +1338,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
                 <option value="frozen">Frozen</option>
+                <option value="discontinued">Discontinued</option>
               </select>
             </Field>
 
@@ -2045,7 +2063,7 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
 
   // Same computed-capacity model as the Customers tab: never a stored number, always
   // derived live from the actual schedule, so it can't drift out of sync.
-  const totalSubscribed = (b) => (b.unlimited ? Infinity : (Number(b.numberOfClasses) || 0) + (Number(b.freeClasses) || 0));
+  const totalSubscribed = (b) => (b.unlimited ? Infinity : (Number(b.numberOfClasses) || 0) + (Number(b.freeClasses) || 0) + (Number(b.remainingAdjustment) || 0));
   const completedCountFor = (bookingId) => classes.filter((c) => c.customerId === bookingId && c.status === "completed").length;
   const scheduledCountFor = (bookingId) => classes.filter((c) => c.customerId === bookingId && c.status === "scheduled").length;
   const unscheduledCountFor = (b) => (b.unlimited ? Infinity : Math.max(0, totalSubscribed(b) - completedCountFor(b.id) - scheduledCountFor(b.id)));
