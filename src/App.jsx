@@ -267,6 +267,15 @@ const sessionEndMinutes = (cls) => {
   return end > start ? end : start + 60;
 };
 const sessionDurationHours = (cls) => (sessionEndMinutes(cls) - parseHM(cls.time)) / 60;
+// True if a session's actual end moment (date + end time, real or fallback) is
+// still in the future — used to block marking a class complete before it's
+// actually finished, checking the exact time, not just the calendar date.
+const isFutureSession = (cls) => {
+  const [y, m, d] = cls.date.split("-").map(Number);
+  const dt = new Date(y, m - 1, d, 0, 0, 0, 0);
+  dt.setMinutes(sessionEndMinutes(cls));
+  return dt > new Date();
+};
 
 const AED = (n) => `AED ${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
@@ -2363,7 +2372,7 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
     setClasses((cs) =>
       cs.map((c) => {
         if (c.id !== id) return c;
-        if (c.status !== "completed" && c.date > todayISO()) return c;
+        if (c.status !== "completed" && isFutureSession(c)) return c;
         return { ...c, status: c.status === "completed" ? "scheduled" : "completed" };
       })
     );
@@ -2538,9 +2547,9 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
                     <div className="flex items-center gap-3">
                       <button
                         onClick={() => toggleComplete(c.id)}
-                        disabled={c.status !== "completed" && c.date > todayISO()}
-                        className={`${c.status !== "completed" && c.date > todayISO() ? "text-green-300 cursor-not-allowed" : "text-green-500 hover:text-green-700"}`}
-                        title={c.status !== "completed" && c.date > todayISO() ? "Can't mark a future class as completed" : "Toggle completed"}
+                        disabled={c.status !== "completed" && isFutureSession(c)}
+                        className={`${c.status !== "completed" && isFutureSession(c) ? "text-green-300 cursor-not-allowed" : "text-green-500 hover:text-green-700"}`}
+                        title={c.status !== "completed" && isFutureSession(c) ? "Can't mark a future class as completed" : "Toggle completed"}
                       >
                         <Check size={16} />
                       </button>
@@ -2597,9 +2606,9 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => toggleComplete(c.id)}
-                      disabled={c.status !== "completed" && c.date > todayISO()}
-                      className={`${c.status !== "completed" && c.date > todayISO() ? "text-green-300 cursor-not-allowed" : "text-green-500 hover:text-green-700"}`}
-                      title={c.status !== "completed" && c.date > todayISO() ? "Can't mark a future class as completed" : "Toggle completed"}
+                      disabled={c.status !== "completed" && isFutureSession(c)}
+                      className={`${c.status !== "completed" && isFutureSession(c) ? "text-green-300 cursor-not-allowed" : "text-green-500 hover:text-green-700"}`}
+                      title={c.status !== "completed" && isFutureSession(c) ? "Can't mark a future class as completed" : "Toggle completed"}
                     >
                       <Check size={16} />
                     </button>
@@ -3367,7 +3376,7 @@ function TrainerPortal({ trainer, classes, setClasses, customers, userEmail }) {
     setClasses((cs) =>
       cs.map((c) => {
         if (c.id !== id || c.trainerId !== trainer.id) return c;
-        if (c.status !== "completed" && c.date > todayISO()) return c;
+        if (c.status !== "completed" && isFutureSession(c)) return c;
         return { ...c, status: c.status === "completed" ? "scheduled" : "completed" };
       })
     );
@@ -3412,7 +3421,7 @@ function TrainerPortal({ trainer, classes, setClasses, customers, userEmail }) {
         <div className="space-y-2 mb-8">
           {upcoming.length === 0 && <div className="text-sm text-green-600">No upcoming sessions.</div>}
           {upcoming.map((c) => {
-            const isFuture = c.date > todayISO();
+            const isFuture = isFutureSession(c);
             return (
               <Card key={c.id} className="p-4 flex items-center justify-between gap-3">
                 <div>
