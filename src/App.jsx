@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabaseClient.js";
 import {
   LayoutDashboard,
@@ -809,7 +809,14 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   // Editing contact details (name, phone, email, location, nationality) propagates to
   // every one of that person's bookings, keeping their history consistent, while
   // booking-specific fields (price, classes, etc.) only apply to the row being edited.
+  // A plain ref (not state) so a rapid double-click can't slip through before React
+  // re-renders — checked and set synchronously, immune to any render timing.
+  const submittingRef = useRef(false);
+
   const submit = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    try {
     if (!form.name) return;
     const storedPerClassPrice = form.unlimited ? (Number(form.priceInput) || 0) / UNLIMITED_ASSUMED_CLASSES : Number(form.priceInput) || 0;
     const freeClasses = form.unlimited ? 0 : Number(form.freeClasses) || 0;
@@ -872,11 +879,15 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
       // near-simultaneous saves can race and the payment gets rejected.
       const personId = form.personId || uid("pp");
       const newId = uid("c");
+      setCustomers((cs) => cs.map((c) => ((c.personId || personKey(c)) === personId ? { ...c, ...contactFields } : c)));
       await insertCustomer({ id: newId, personId, ...contactFields, ...bookingFields });
       setPayments((ps) => [...ps, { id: uid("p"), date: paymentDate, customerId: newId, ...paymentFields }]);
     }
     setForm(blankForm);
     setOpen(false);
+    } finally {
+      submittingRef.current = false;
+    }
   };
 
   // Removing a customer line item also removes its generated payment and cancels
@@ -1117,7 +1128,6 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
             <input
               className={inputCls}
               value={form.name}
-              disabled={!editingId && source === "existing"}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
           </Field>
@@ -1125,7 +1135,6 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
             <input
               className={inputCls}
               value={form.phone}
-              disabled={!editingId && source === "existing"}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
             />
           </Field>
@@ -1134,7 +1143,6 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
               type="email"
               className={inputCls}
               value={form.email}
-              disabled={!editingId && source === "existing"}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
               placeholder="name@example.com"
             />
@@ -1143,7 +1151,6 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
             <input
               className={inputCls}
               value={form.location}
-              disabled={!editingId && source === "existing"}
               onChange={(e) => setForm({ ...form, location: e.target.value })}
               placeholder="e.g. Al Reem Island, Abu Dhabi"
             />
@@ -1152,7 +1159,6 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
             <input
               className={inputCls}
               value={form.nationality}
-              disabled={!editingId && source === "existing"}
               onChange={(e) => setForm({ ...form, nationality: e.target.value })}
               placeholder="e.g. Emirati, Indian, British"
             />
@@ -2095,6 +2101,9 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
 
   const nameOf = (list, id) => list.find((x) => x.id === id)?.name || "—";
+  // Converts minutes-since-midnight back to a 24h "HH:MM" string, for displaying
+  // a class's effective end time (real or fallback) in conflict messages.
+  const minutesToHM = (mins) => `${String(Math.floor(mins / 60) % 24).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
   // A stable color per trainer (by their position in the trainers list) so calendar
   // chips are visually distinguishable by trainer at a glance, not just by status.
   const TRAINER_PALETTE = [
@@ -2203,22 +2212,25 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
   // individually inside submit()) -----
   // A trainer can't be double-booked with an overlapping time range on the same
   // day (excluding the session being edited, so saving an unrelated change to it
-  // doesn't flag itself).
-  const trainerConflict = classes.some(
+  // doesn't flag itself). Using find() rather than some() so the warning can name
+  // exactly which existing session it clashes with.
+  const trainerConflictClass = classes.find(
     (c) =>
       c.id !== editingId &&
       c.trainerId === form.trainerId &&
       c.date === form.date &&
       rangesOverlap(parseHM(form.time), parseHM(form.endTime), parseHM(c.time), sessionEndMinutes(c))
   );
+  const trainerConflict = !!trainerConflictClass;
   // A customer can't be in two overlapping sessions either, regardless of trainer.
-  const customerConflict = classes.some(
+  const customerConflictClass = classes.find(
     (c) =>
       c.id !== editingId &&
       c.customerId === form.customerId &&
       c.date === form.date &&
       rangesOverlap(parseHM(form.time), parseHM(form.endTime), parseHM(c.time), sessionEndMinutes(c))
   );
+  const customerConflict = !!customerConflictClass;
   // A customer with no unscheduled classes left can't be booked — unless this is an
   // edit to their own existing session (not a new consumption of capacity).
   const customerOutOfClasses = (() => {
@@ -2263,61 +2275,71 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
     setExtraSessions((rows) => rows.filter((_, i) => i !== idx));
   };
 
+  // A plain ref (not state) so a rapid double-click can't slip through before React
+  // re-renders — this is checked and set synchronously, immune to any render timing.
+  const submittingRef = useRef(false);
+
   const submit = () => {
-    if (editingId) {
-      if (!canSubmit) return;
-      setClasses((cs) => cs.map((c) => (c.id === editingId ? { ...c, ...form } : c)));
-      setOpen(false);
-      return;
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    try {
+      if (editingId) {
+        if (!canSubmit) return;
+        setClasses((cs) => cs.map((c) => (c.id === editingId ? { ...c, ...form } : c)));
+        setOpen(false);
+        return;
+      }
+
+      // New booking(s): the primary session plus any extra rows queued up, all for
+      // the same trainer + customer. Each is validated independently — an overlapping
+      // slot for the trainer or customer, a day the trainer's off, or running out of
+      // unscheduled classes skips just that row rather than blocking the whole batch.
+      const customer = customers.find((c) => c.id === form.customerId);
+      const capacity = customer && !customer.unlimited ? unscheduledCountFor(customer) : Infinity;
+      const candidates = [{ date: form.date, time: form.time, endTime: form.endTime }, ...extraSessions];
+      const occupiedTrainer = []; // {date, start, end} already claimed in this batch, by trainer
+      const occupiedCustomer = []; // same, by customer
+      const toCreate = [];
+      let skipped = 0;
+
+      candidates.forEach(({ date, time, endTime }) => {
+        if (!date || !time || !endTime) { skipped++; return; }
+        const start = parseHM(time);
+        const end = parseHM(endTime);
+        if (end <= start) { skipped++; return; }
+
+        const trainerBusy =
+          classes.some((c) => c.trainerId === form.trainerId && c.date === date && rangesOverlap(start, end, parseHM(c.time), sessionEndMinutes(c))) ||
+          occupiedTrainer.some((o) => o.date === date && rangesOverlap(start, end, o.start, o.end));
+        const customerBusy =
+          classes.some((c) => c.customerId === form.customerId && c.date === date && rangesOverlap(start, end, parseHM(c.time), sessionEndMinutes(c))) ||
+          occupiedCustomer.some((o) => o.date === date && rangesOverlap(start, end, o.start, o.end));
+        const onLeave = (timeOff || []).some((o) => o.trainerId === form.trainerId && date >= o.startDate && date <= o.endDate);
+
+        if (trainerBusy || customerBusy || onLeave || toCreate.length >= capacity) { skipped++; return; }
+        occupiedTrainer.push({ date, start, end });
+        occupiedCustomer.push({ date, start, end });
+        toCreate.push({ id: uid("cl"), status: "scheduled", date, time, endTime, trainerId: form.trainerId, customerId: form.customerId });
+      });
+
+      if (toCreate.length) {
+        setClasses((cs) => [...cs, ...toCreate]);
+      }
+
+      if (candidates.length > 1 || skipped > 0) {
+        setBatchSummary(
+          `Added ${toCreate.length} session${toCreate.length === 1 ? "" : "s"}${skipped ? `, skipped ${skipped} (overlap, trainer off, or no unscheduled classes left)` : ""}.`
+        );
+      }
+
+      if (toCreate.length > 0 && skipped === 0) {
+        setOpen(false);
+      }
+      // If anything was skipped, keep the dialog open so staff can see the summary
+      // and adjust before closing — closing happens via the Close button in that case.
+    } finally {
+      submittingRef.current = false;
     }
-
-    // New booking(s): the primary session plus any extra rows queued up, all for
-    // the same trainer + customer. Each is validated independently — an overlapping
-    // slot for the trainer or customer, a day the trainer's off, or running out of
-    // unscheduled classes skips just that row rather than blocking the whole batch.
-    const customer = customers.find((c) => c.id === form.customerId);
-    const capacity = customer && !customer.unlimited ? unscheduledCountFor(customer) : Infinity;
-    const candidates = [{ date: form.date, time: form.time, endTime: form.endTime }, ...extraSessions];
-    const occupiedTrainer = []; // {date, start, end} already claimed in this batch, by trainer
-    const occupiedCustomer = []; // same, by customer
-    const toCreate = [];
-    let skipped = 0;
-
-    candidates.forEach(({ date, time, endTime }) => {
-      if (!date || !time || !endTime) { skipped++; return; }
-      const start = parseHM(time);
-      const end = parseHM(endTime);
-      if (end <= start) { skipped++; return; }
-
-      const trainerBusy =
-        classes.some((c) => c.trainerId === form.trainerId && c.date === date && rangesOverlap(start, end, parseHM(c.time), sessionEndMinutes(c))) ||
-        occupiedTrainer.some((o) => o.date === date && rangesOverlap(start, end, o.start, o.end));
-      const customerBusy =
-        classes.some((c) => c.customerId === form.customerId && c.date === date && rangesOverlap(start, end, parseHM(c.time), sessionEndMinutes(c))) ||
-        occupiedCustomer.some((o) => o.date === date && rangesOverlap(start, end, o.start, o.end));
-      const onLeave = (timeOff || []).some((o) => o.trainerId === form.trainerId && date >= o.startDate && date <= o.endDate);
-
-      if (trainerBusy || customerBusy || onLeave || toCreate.length >= capacity) { skipped++; return; }
-      occupiedTrainer.push({ date, start, end });
-      occupiedCustomer.push({ date, start, end });
-      toCreate.push({ id: uid("cl"), status: "scheduled", date, time, endTime, trainerId: form.trainerId, customerId: form.customerId });
-    });
-
-    if (toCreate.length) {
-      setClasses((cs) => [...cs, ...toCreate]);
-    }
-
-    if (candidates.length > 1 || skipped > 0) {
-      setBatchSummary(
-        `Added ${toCreate.length} session${toCreate.length === 1 ? "" : "s"}${skipped ? `, skipped ${skipped} (overlap, trainer off, or no unscheduled classes left)` : ""}.`
-      );
-    }
-
-    if (toCreate.length > 0 && skipped === 0) {
-      setOpen(false);
-    }
-    // If anything was skipped, keep the dialog open so staff can see the summary
-    // and adjust before closing — closing happens via the Close button in that case.
   };
 
   // No separate "refund" bookkeeping needed — remaining/unscheduled counts are
@@ -2744,7 +2766,7 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
           </Field>
           {trainerConflict && (
             <div className="flex items-center gap-1 text-xs bg-red-50 text-red-600 rounded-md px-3 py-2 mb-3">
-              <AlertTriangle size={13} /> This trainer already has a session at this date and time.
+              <AlertTriangle size={13} /> {nameOf(trainers, form.trainerId)} already has a booking with {nameOf(customers, trainerConflictClass.customerId)} at {formatTime12h(trainerConflictClass.time)}–{formatTime12h(minutesToHM(sessionEndMinutes(trainerConflictClass)))} on {trainerConflictClass.date}.
             </div>
           )}
           {!trainerConflict && trainerOnLeave && (
@@ -2754,7 +2776,7 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
           )}
           {customerConflict && (
             <div className="flex items-center gap-1 text-xs bg-red-50 text-red-600 rounded-md px-3 py-2 mb-3">
-              <AlertTriangle size={13} /> This customer already has an overlapping session.
+              <AlertTriangle size={13} /> {nameOf(customers, form.customerId)} already has a booking with {nameOf(trainers, customerConflictClass.trainerId)} at {formatTime12h(customerConflictClass.time)}–{formatTime12h(minutesToHM(sessionEndMinutes(customerConflictClass)))} on {customerConflictClass.date}.
             </div>
           )}
           {(trainerNeighborSessions.prev || trainerNeighborSessions.next) && (
