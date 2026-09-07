@@ -3262,6 +3262,19 @@ function useSyncedTable(table, seed, enabled, onError) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, table]);
 
+  // "JWT issued at future" is almost always transient clock skew between the
+  // browser and the server — refreshing the session mints a fresh token and
+  // usually clears it immediately. Wraps any Supabase write with one automatic
+  // retry for this specific error, same as the initial load fetch already does.
+  const withJwtRetry = async (fn) => {
+    let { error } = await fn();
+    if (error && /jwt|issued at future/i.test(error.message || "")) {
+      await supabase.auth.refreshSession();
+      ({ error } = await fn());
+    }
+    return { error };
+  };
+
   const setSynced = (updater) => {
     setRows((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
@@ -3269,7 +3282,7 @@ function useSyncedTable(table, seed, enabled, onError) {
         const nextIds = new Set(next.map((r) => r.id));
         prev.forEach((r) => {
           if (!nextIds.has(r.id)) {
-            supabase.from(table).delete().eq("id", r.id).then(({ error }) => {
+            withJwtRetry(() => supabase.from(table).delete().eq("id", r.id)).then(({ error }) => {
               if (error) {
                 console.error(`Delete failed on ${table}:`, error.message);
                 onError?.(`A delete on ${table} failed to save (${error.message}). It may reappear.`);
@@ -3280,14 +3293,14 @@ function useSyncedTable(table, seed, enabled, onError) {
         next.forEach((r) => {
           const old = prev.find((p) => p.id === r.id);
           if (!old) {
-            supabase.from(table).insert(r).then(({ error }) => {
+            withJwtRetry(() => supabase.from(table).insert(r)).then(({ error }) => {
               if (error) {
                 console.error(`Insert failed on ${table}:`, error.message);
                 onError?.(`Saving a new entry to ${table} failed (${error.message}). It's only on this device until this is fixed.`);
               }
             });
           } else if (JSON.stringify(old) !== JSON.stringify(r)) {
-            supabase.from(table).update(r).eq("id", r.id).then(({ error }) => {
+            withJwtRetry(() => supabase.from(table).update(r).eq("id", r.id)).then(({ error }) => {
               if (error) {
                 console.error(`Update failed on ${table}:`, error.message);
                 onError?.(`Saving a change to ${table} failed (${error.message}). It's only on this device until this is fixed.`);
@@ -3306,7 +3319,7 @@ function useSyncedTable(table, seed, enabled, onError) {
   const insertRow = async (row) => {
     setRows((prev) => [...prev, row]);
     if (!enabled) return { error: null };
-    const { error } = await supabase.from(table).insert(row);
+    const { error } = await withJwtRetry(() => supabase.from(table).insert(row));
     if (error) {
       console.error(`Insert failed on ${table}:`, error.message);
       onError?.(`Saving a new entry to ${table} failed (${error.message}). It's only on this device until this is fixed.`);
