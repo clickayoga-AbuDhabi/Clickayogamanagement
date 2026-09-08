@@ -561,6 +561,36 @@ function Dashboard({ trainers, customers, classes, payments }) {
   });
   const totalCommission = commissions.reduce((s, c) => s + c.commissionEarned, 0);
 
+  // ----- New vs. repeating subscriptions, scoped to whichever period is selected
+  // above. "New" = a customer's very first payment ever (classified against their
+  // whole payment history, not just this period); every payment after that —
+  // even a second purchase in the same period — counts as repeating. -----
+  const personKeyOf = (bookingId) => {
+    const booking = customers.find((c) => c.id === bookingId);
+    if (!booking) return bookingId;
+    return booking.personId || booking.name;
+  };
+  const sortedPayments = [...payments].sort((a, b) => a.date.localeCompare(b.date));
+  const seenPeople = new Set();
+  const paymentKind = {}; // payment id -> "new" | "repeat", based on full history
+  sortedPayments.forEach((p) => {
+    const key = personKeyOf(p.customerId);
+    if (seenPeople.has(key)) {
+      paymentKind[p.id] = "repeat";
+    } else {
+      paymentKind[p.id] = "new";
+      seenPeople.add(key);
+    }
+  });
+  const newPayments = periodPayments.filter((p) => paymentKind[p.id] === "new");
+  const repeatPayments = periodPayments.filter((p) => paymentKind[p.id] === "repeat");
+  const subscriptionStats = {
+    newCount: newPayments.length,
+    repeatCount: repeatPayments.length,
+    newRevenue: newPayments.reduce((s, p) => s + (p.amountPaid || 0), 0),
+    repeatRevenue: repeatPayments.reduce((s, p) => s + (p.amountPaid || 0), 0),
+  };
+
   // Counts unique people (grouped by name) whose status is active — not raw
   // booking-row count, since one person can have several booking line items.
   const activeCustomersCount = new Set(
@@ -620,6 +650,29 @@ function Dashboard({ trainers, customers, classes, payments }) {
           <div className="text-sm text-green-600">No payments logged for this period.</div>
         )}
       </Card>
+
+      <SectionTitle eyebrow="Growth" title="New vs. repeating subscriptions — selected period" />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-2">
+        <Card className="p-4">
+          <div className="text-[11px] uppercase tracking-wide text-green-600">New subscriptions</div>
+          <div className="text-2xl font-serif text-green-900 mt-1">{subscriptionStats.newCount}</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-[11px] uppercase tracking-wide text-green-600">Repeating subscriptions</div>
+          <div className="text-2xl font-serif text-green-900 mt-1">{subscriptionStats.repeatCount}</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-[11px] uppercase tracking-wide text-green-600">Revenue from new</div>
+          <div className="text-2xl font-serif text-green-900 mt-1">{AED(subscriptionStats.newRevenue)}</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-[11px] uppercase tracking-wide text-green-600">Revenue from repeating</div>
+          <div className="text-2xl font-serif text-green-900 mt-1">{AED(subscriptionStats.repeatRevenue)}</div>
+        </Card>
+      </div>
+      <p className="text-[11px] text-green-600 mb-8">
+        Each customer's very first payment ever counts as "new"; every payment after that — even a second purchase in this same period — counts as repeating.
+      </p>
 
       <SectionTitle eyebrow="Payroll" title="Trainer commission — selected period" />
       <div className="grid md:grid-cols-2 gap-4">
