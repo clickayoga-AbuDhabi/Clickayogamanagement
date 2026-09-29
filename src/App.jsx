@@ -324,24 +324,29 @@ const classType = (cls, customers) => customers.find((c) => c.id === cls.custome
 // A class priced under AED 101 is a trial class — excluded entirely from commission.
 const isTrialClass = (cls, customers) => classPrice(cls, customers) < TRIAL_CLASS_THRESHOLD;
 
-// Commission rate scales with how many classes a trainer completes in a given
-// calendar month: 50 and below uses the trainer's own base rate (default 20%),
-// 51–99 classes bumps to 30%, and 100+ classes bumps to 40%. Group classes are
-// the one exception — they always pay the flat GROUP_CLASS_COMMISSION_RATE.
-const commissionTierRate = (completedInMonth, baseRate) => {
-  if (completedInMonth >= 100) return 0.4;
-  if (completedInMonth > 50) return 0.3;
+// Commission is graduated (bracketed) by a trainer's PRIVATE-class volume within
+// a calendar month: the 1st–50th billable private class of the month pays the
+// trainer's own base rate (default 20%), the 51st–100th pays 30%, and the 101st
+// onward pays 40% — each class keeps the rate for the bracket it falls into,
+// rather than the whole month jumping to one rate once a threshold is crossed.
+// `position` is the class's 1-based rank among that trainer's billable private
+// classes that month (earliest first). Group classes don't consume a bracket
+// position — they're rated separately, always at the flat group rate.
+const commissionTierRateForPosition = (position, baseRate) => {
+  if (position > 100) return 0.4;
+  if (position > 50) return 0.3;
   return baseRate;
 };
 
 // Builds a per-class commission breakdown for a trainer across a set of classes.
-// Classes are grouped by calendar month so the volume tier is evaluated per month
-// (not across the whole date range); trial classes (priced under AED 101) are
-// excluded from that monthly volume count and always earn zero commission, while
-// every other completed class pays out at the flat group rate if its customer is
-// on a group booking, or the month's volume-tier rate otherwise. Returns one line
-// per completed class (including trial classes, marked isTrial with commission 0),
-// sorted by date, so the same numbers back both the totals and the per-class list.
+// Classes are grouped by calendar month so the private-class volume bracket is
+// tracked per month (not across the whole date range) and assigned in date order.
+// Trial classes (priced under AED 101) are excluded entirely — no bracket
+// position, no commission. Group classes always pay the flat
+// GROUP_CLASS_COMMISSION_RATE and don't take up a private bracket slot. Returns
+// one line per completed class (including trial classes, marked isTrial with
+// commission 0), sorted by date, so the same numbers back both the totals and
+// the per-class list.
 const trainerCommissionBreakdown = (trainer, classList, customers) => {
   const completed = classList.filter((c) => c.trainerId === trainer.id && c.status === "completed");
   const byMonth = {};
@@ -351,19 +356,32 @@ const trainerCommissionBreakdown = (trainer, classList, customers) => {
   });
   const lines = [];
   Object.values(byMonth).forEach((monthClasses) => {
-    const billable = monthClasses.filter((c) => !isTrialClass(c, customers));
-    const tierRate = commissionTierRate(billable.length, trainer.commissionRate);
-    monthClasses.forEach((c) => {
+    // Chronological order (date, then time) so brackets fill in the order the
+    // classes actually happened.
+    const sorted = [...monthClasses].sort((a, b) => {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+      return (a.time || "").localeCompare(b.time || "");
+    });
+    let privatePosition = 0;
+    sorted.forEach((c) => {
       const price = classPrice(c, customers);
       if (isTrialClass(c, customers)) {
         lines.push({ cls: c, price, rate: 0, commission: 0, isTrial: true });
         return;
       }
-      const rate = classType(c, customers) === "group" ? GROUP_CLASS_COMMISSION_RATE : tierRate;
+      if (classType(c, customers) === "group") {
+        lines.push({ cls: c, price, rate: GROUP_CLASS_COMMISSION_RATE, commission: price * GROUP_CLASS_COMMISSION_RATE, isTrial: false });
+        return;
+      }
+      privatePosition += 1;
+      const rate = commissionTierRateForPosition(privatePosition, trainer.commissionRate);
       lines.push({ cls: c, price, rate, commission: price * rate, isTrial: false });
     });
   });
-  lines.sort((a, b) => (a.cls.date < b.cls.date ? -1 : a.cls.date > b.cls.date ? 1 : 0));
+  lines.sort((a, b) => {
+    if (a.cls.date !== b.cls.date) return a.cls.date < b.cls.date ? -1 : 1;
+    return (a.cls.time || "").localeCompare(b.cls.time || "");
+  });
   return lines;
 };
 
@@ -1707,10 +1725,10 @@ function Trainers({ trainers, setTrainers, classes, customers, timeOff, setTimeO
             <div className="text-xs text-green-600 mb-3">{t.cred}</div>
             <div className="grid grid-cols-2 gap-y-1 text-sm text-green-700">
               <span>Base salary</span><span className="text-green-900">{AED(t.baseSalary)}/mo</span>
-              <span>Base commission</span><span className="text-green-900">{Math.round(t.commissionRate * 100)}% (≤50/mo) · 30% (51–99) · 40% (100+)</span>
+              <span>Base commission</span><span className="text-green-900">{Math.round(t.commissionRate * 100)}% (1st–50th private class/mo) · 30% (51st–100th) · 40% (101st+)</span>
               <span>Monthly target</span><span className="text-green-900">{t.monthlyTarget} hours</span>
             </div>
-            <div className="text-[11px] text-green-600 mt-2">Group classes always pay a flat 10%, regardless of volume.</div>
+            <div className="text-[11px] text-green-600 mt-2">Group classes always pay a flat 10%, regardless of volume. Trial classes (under AED {TRIAL_CLASS_THRESHOLD}) earn no commission and don't count toward the bracket.</div>
             {t.authEmail ? (
               <div className="flex items-center gap-1 text-[11px] text-green-700 mt-2">
                 <UserRound size={11} /> Portal access: {t.authEmail}
@@ -1867,7 +1885,7 @@ function Trainers({ trainers, setTrainers, classes, customers, timeOff, setTimeO
           <Field label="Base salary (AED/month)">
             <input type="number" className={inputCls} value={form.baseSalary} onChange={(e) => setForm({ ...form, baseSalary: Number(e.target.value) })} />
           </Field>
-          <Field label="Base commission rate (% — applies at 50 classes/month or fewer)">
+          <Field label="Base commission rate (% — applies to the 1st–50th private class each month)">
             <input type="number" className={inputCls} value={form.commissionRate * 100} onChange={(e) => setForm({ ...form, commissionRate: Number(e.target.value) / 100 })} />
           </Field>
           <Field label="Monthly target (hours)">
