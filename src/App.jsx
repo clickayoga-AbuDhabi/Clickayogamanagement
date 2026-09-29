@@ -305,6 +305,10 @@ const UNLIMITED_ASSUMED_CLASSES = 20;
 // Group classes pay a flat commission regardless of monthly volume tier.
 const GROUP_CLASS_COMMISSION_RATE = 0.1;
 
+// Any class priced below this is treated as a trial class — trial classes earn
+// no commission and don't count toward a trainer's monthly volume tier.
+const TRIAL_CLASS_THRESHOLD = 101;
+
 // The per-class price a given scheduled class is worth, taken directly from the
 // customer's own per-class price (entered when they were booked in) — not a flat
 // rate per trainer, and not looked up from any shared package.
@@ -317,6 +321,9 @@ const classPrice = (cls, customers) => {
 // rule applies.
 const classType = (cls, customers) => customers.find((c) => c.id === cls.customerId)?.classType || "private";
 
+// A class priced under AED 101 is a trial class — excluded entirely from commission.
+const isTrialClass = (cls, customers) => classPrice(cls, customers) < TRIAL_CLASS_THRESHOLD;
+
 // Commission rate scales with how many classes a trainer completes in a given
 // calendar month: 50 and below uses the trainer's own base rate (default 20%),
 // 51–99 classes bumps to 30%, and 100+ classes bumps to 40%. Group classes are
@@ -327,28 +334,42 @@ const commissionTierRate = (completedInMonth, baseRate) => {
   return baseRate;
 };
 
-// Sums a trainer's commission across a set of classes. Classes are grouped by
-// calendar month so the volume tier is evaluated per month (not across the
-// whole date range); each class then pays out at the flat group rate if its
-// customer is on a group booking, or the month's volume-tier rate otherwise.
-const trainerCommission = (trainer, classList, customers) => {
+// Builds a per-class commission breakdown for a trainer across a set of classes.
+// Classes are grouped by calendar month so the volume tier is evaluated per month
+// (not across the whole date range); trial classes (priced under AED 101) are
+// excluded from that monthly volume count and always earn zero commission, while
+// every other completed class pays out at the flat group rate if its customer is
+// on a group booking, or the month's volume-tier rate otherwise. Returns one line
+// per completed class (including trial classes, marked isTrial with commission 0),
+// sorted by date, so the same numbers back both the totals and the per-class list.
+const trainerCommissionBreakdown = (trainer, classList, customers) => {
   const completed = classList.filter((c) => c.trainerId === trainer.id && c.status === "completed");
   const byMonth = {};
   completed.forEach((c) => {
     const month = c.date.slice(0, 7);
     (byMonth[month] = byMonth[month] || []).push(c);
   });
-  return Object.values(byMonth).reduce((total, monthClasses) => {
-    const tierRate = commissionTierRate(monthClasses.length, trainer.commissionRate);
-    return (
-      total +
-      monthClasses.reduce((s, c) => {
-        const rate = classType(c, customers) === "group" ? GROUP_CLASS_COMMISSION_RATE : tierRate;
-        return s + classPrice(c, customers) * rate;
-      }, 0)
-    );
-  }, 0);
+  const lines = [];
+  Object.values(byMonth).forEach((monthClasses) => {
+    const billable = monthClasses.filter((c) => !isTrialClass(c, customers));
+    const tierRate = commissionTierRate(billable.length, trainer.commissionRate);
+    monthClasses.forEach((c) => {
+      const price = classPrice(c, customers);
+      if (isTrialClass(c, customers)) {
+        lines.push({ cls: c, price, rate: 0, commission: 0, isTrial: true });
+        return;
+      }
+      const rate = classType(c, customers) === "group" ? GROUP_CLASS_COMMISSION_RATE : tierRate;
+      lines.push({ cls: c, price, rate, commission: price * rate, isTrial: false });
+    });
+  });
+  lines.sort((a, b) => (a.cls.date < b.cls.date ? -1 : a.cls.date > b.cls.date ? 1 : 0));
+  return lines;
 };
+
+// Sums a trainer's commission across a set of classes (trial classes contribute 0).
+const trainerCommission = (trainer, classList, customers) =>
+  trainerCommissionBreakdown(trainer, classList, customers).reduce((s, l) => s + l.commission, 0);
 
 // ---------- Shared bits ----------
 
@@ -3196,22 +3217,30 @@ function CommissionTab({ trainers, classes, customers }) {
   const [month, setMonth] = useState(thisMonthISO());
   const [startDate, setStartDate] = useState(monthStartISO());
   const [endDate, setEndDate] = useState(monthEndISO());
+  const [expandedTrainerId, setExpandedTrainerId] = useState(null);
   const inPeriod = (dateStr) => (mode === "month" ? dateStr.startsWith(month) : dateStr >= startDate && dateStr <= endDate);
   const periodClasses = classes.filter((c) => inPeriod(c.date));
+  const nameOf = (id) => customers.find((cu) => cu.id === id)?.name || "—";
 
   const commissions = trainers.map((t) => {
-    const completedClasses = periodClasses.filter((c) => c.trainerId === t.id && c.status === "completed");
-    const completed = completedClasses.length;
-    const commissionEarned = trainerCommission(t, periodClasses, customers);
-    const zeroPricedCount = completedClasses.filter((c) => classPrice(c, customers) <= 0).length;
+    const lines = trainerCommissionBreakdown(t, periodClasses, customers);
+    const completed = lines.length;
+    const billableLines = lines.filter((l) => !l.isTrial);
+    const commissionEarned = lines.reduce((s, l) => s + l.commission, 0);
+    const trialCount = lines.filter((l) => l.isTrial && l.price > 0).length;
+    const zeroPricedCount = lines.filter((l) => l.isTrial && l.price <= 0).length;
     return {
       trainer: t,
+      lines,
       completed,
+      billableCount: billableLines.length,
       commissionEarned,
       total: t.baseSalary + commissionEarned,
+      trialCount,
       zeroPricedCount,
     };
   });
+  const expanded = commissions.find((c) => c.trainer.id === expandedTrainerId);
 
   return (
     <div>
@@ -3233,27 +3262,85 @@ function CommissionTab({ trainers, classes, customers }) {
       />
       <div className="grid md:grid-cols-2 gap-4 mb-8">
         {commissions.map((c) => (
-          <Card key={c.trainer.id} className="p-5">
+          <Card
+            key={c.trainer.id}
+            className="p-5 cursor-pointer hover:ring-2 hover:ring-green-200 transition"
+            onClick={() => setExpandedTrainerId(c.trainer.id)}
+          >
             <div className="flex items-center justify-between mb-3">
               <div className="font-medium text-green-900">{c.trainer.name}</div>
-              <span className="text-xs text-green-600">{c.completed} classes completed</span>
+              <span className="text-xs text-green-600">
+                {c.completed} classes completed{c.trialCount > 0 ? ` (${c.trialCount} trial)` : ""}
+              </span>
             </div>
             <div className="grid grid-cols-2 gap-y-1 text-sm text-green-700">
               <span>Base salary</span><span className="text-green-900 text-right">{AED(c.trainer.baseSalary)}</span>
-              <span>Commission (tiered by monthly volume — {c.completed} classes)</span>
+              <span>Commission (tiered by monthly volume — {c.billableCount} billable classes)</span>
               <span className="text-green-900 text-right">{AED(c.commissionEarned)}</span>
               <span className="font-medium text-green-900 border-t border-gray-100 pt-1 mt-1">Total payout</span>
               <span className="font-serif text-lg text-green-900 border-t border-gray-100 pt-1 mt-1 text-right">{AED(c.total)}</span>
             </div>
+            {c.trialCount > 0 && (
+              <div className="text-xs text-green-600 mt-2">
+                {c.trialCount} trial class{c.trialCount === 1 ? "" : "es"} (under AED {TRIAL_CLASS_THRESHOLD}) excluded from commission.
+              </div>
+            )}
             {c.zeroPricedCount > 0 && (
               <div className="flex items-center gap-1 text-xs text-red-600 mt-2">
                 <AlertTriangle size={12} />
                 {c.zeroPricedCount} completed class{c.zeroPricedCount === 1 ? "" : "es"} {c.zeroPricedCount === 1 ? "has" : "have"} a customer with no price set — check the Customers tab.
               </div>
             )}
+            <div className="text-xs text-emerald-600 mt-3">View classes for this period →</div>
           </Card>
         ))}
       </div>
+      {expanded && (
+        <Modal title={`${expanded.trainer.name} — classes this period`} onClose={() => setExpandedTrainerId(null)} wide>
+          <div className="text-xs text-green-600 mb-3">
+            {expanded.completed} classes completed · {expanded.billableCount} billable · {expanded.trialCount} trial ·
+            total commission {AED(expanded.commissionEarned)}
+          </div>
+          {expanded.lines.length === 0 ? (
+            <div className="text-sm text-green-600">No completed classes in this period.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-green-600 border-b border-green-100">
+                    <th className="py-2 pr-3">Date</th>
+                    <th className="py-2 pr-3">Customer</th>
+                    <th className="py-2 pr-3">Type</th>
+                    <th className="py-2 pr-3 text-right">Price</th>
+                    <th className="py-2 pr-3 text-right">Rate</th>
+                    <th className="py-2 pr-3 text-right">Commission</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {expanded.lines.map((l) => (
+                    <tr key={l.cls.id} className="border-b border-gray-50">
+                      <td className="py-2 pr-3 text-green-900 whitespace-nowrap">
+                        {l.cls.date}{l.cls.time ? ` ${formatTime12h(l.cls.time)}` : ""}
+                      </td>
+                      <td className="py-2 pr-3 text-green-900">{nameOf(l.cls.customerId)}</td>
+                      <td className="py-2 pr-3 text-green-700">
+                        {l.isTrial ? (
+                          <span className="text-amber-600">Trial</span>
+                        ) : (
+                          classType(l.cls, customers) === "group" ? "Group" : "Private"
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 text-right text-green-700">{AED(l.price)}</td>
+                      <td className="py-2 pr-3 text-right text-green-700">{l.isTrial ? "—" : `${Math.round(l.rate * 100)}%`}</td>
+                      <td className="py-2 pr-3 text-right text-green-900 font-medium">{AED(l.commission)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Modal>
+      )}
     </div>
   );
 }
