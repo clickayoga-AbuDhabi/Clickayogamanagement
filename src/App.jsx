@@ -419,9 +419,9 @@ function TopBar({ tab, setTab, userEmail }) {
   );
 }
 
-function Card({ children, className = "" }) {
+function Card({ children, className = "", ...rest }) {
   return (
-    <div className={`bg-white rounded-lg border border-green-100 shadow-sm ${className}`}>{children}</div>
+    <div className={`bg-white rounded-lg border border-green-100 shadow-sm ${className}`} {...rest}>{children}</div>
   );
 }
 
