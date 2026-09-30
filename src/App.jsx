@@ -3541,6 +3541,20 @@ function TrainerPortal({ trainer, classes, setClasses, customers, userEmail }) {
   const nameOf = (id) => customers.find((c) => c.id === id)?.name || "—";
   const locationOf = (id) => customers.find((c) => c.id === id)?.location || "—";
 
+  // ----- Their own commission, period-selectable, from the same engine that
+  // drives the admin Commission tab — a trainer only ever sees their own rows. -----
+  const [commissionMode, setCommissionMode] = useState("month");
+  const [commissionMonth, setCommissionMonth] = useState(thisMonthISO());
+  const [commissionStart, setCommissionStart] = useState(monthStartISO());
+  const [commissionEnd, setCommissionEnd] = useState(monthEndISO());
+  const inCommissionPeriod = (dateStr) =>
+    commissionMode === "month" ? dateStr.startsWith(commissionMonth) : dateStr >= commissionStart && dateStr <= commissionEnd;
+  const commissionPeriodClasses = classes.filter((c) => inCommissionPeriod(c.date));
+  const commissionLines = trainerCommissionBreakdown(trainer, commissionPeriodClasses, customers);
+  const billableCount = commissionLines.filter((l) => !l.isTrial).length;
+  const trialCount = commissionLines.filter((l) => l.isTrial && l.price > 0).length;
+  const commissionTotal = commissionLines.reduce((s, l) => s + l.commission, 0);
+
   // Defensively re-checks trainerId even though the UI only ever shows their own
   // sessions — a class can only ever be toggled if it's genuinely this trainer's.
   const toggleComplete = (id) => {
@@ -3635,6 +3649,73 @@ function TrainerPortal({ trainer, classes, setClasses, customers, userEmail }) {
             </Card>
           ))}
         </div>
+
+        <SectionTitle
+          eyebrow="Payroll"
+          title="Your commission"
+          action={
+            <PeriodSelector
+              mode={commissionMode}
+              setMode={setCommissionMode}
+              month={commissionMonth}
+              setMonth={setCommissionMonth}
+              startDate={commissionStart}
+              setStartDate={setCommissionStart}
+              endDate={commissionEnd}
+              setEndDate={setCommissionEnd}
+            />
+          }
+        />
+        <Card className="p-5 mb-4">
+          <div className="grid grid-cols-2 gap-y-1 text-sm text-green-700">
+            <span>Base salary</span>
+            <span className="text-green-900 text-right">{AED(trainer.baseSalary)}</span>
+            <span>Commission ({billableCount} billable class{billableCount === 1 ? "" : "es"}{trialCount > 0 ? `, ${trialCount} trial excluded` : ""})</span>
+            <span className="text-green-900 text-right">{AED(commissionTotal)}</span>
+            <span className="font-medium text-green-900 border-t border-gray-100 pt-1 mt-1">Total payout</span>
+            <span className="font-serif text-lg text-green-900 border-t border-gray-100 pt-1 mt-1 text-right">
+              {AED(trainer.baseSalary + commissionTotal)}
+            </span>
+          </div>
+        </Card>
+        {commissionLines.length === 0 ? (
+          <div className="text-sm text-green-600 mb-8">No completed classes in this period.</div>
+        ) : (
+          <div className="overflow-x-auto mb-8">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-green-600 border-b border-green-100">
+                  <th className="py-2 pr-3">Date</th>
+                  <th className="py-2 pr-3">Customer</th>
+                  <th className="py-2 pr-3">Type</th>
+                  <th className="py-2 pr-3 text-right">Price</th>
+                  <th className="py-2 pr-3 text-right">Rate</th>
+                  <th className="py-2 pr-3 text-right">Commission</th>
+                </tr>
+              </thead>
+              <tbody>
+                {commissionLines.map((l) => (
+                  <tr key={l.cls.id} className="border-b border-gray-50">
+                    <td className="py-2 pr-3 text-green-900 whitespace-nowrap">
+                      {l.cls.date}{l.cls.time ? ` ${formatTime12h(l.cls.time)}` : ""}
+                    </td>
+                    <td className="py-2 pr-3 text-green-900">{nameOf(l.cls.customerId)}</td>
+                    <td className="py-2 pr-3 text-green-700">
+                      {l.isTrial ? (
+                        <span className="text-amber-600">Trial</span>
+                      ) : (
+                        classType(l.cls, customers) === "group" ? "Group" : "Private"
+                      )}
+                    </td>
+                    <td className="py-2 pr-3 text-right text-green-700">{AED(l.price)}</td>
+                    <td className="py-2 pr-3 text-right text-green-700">{l.isTrial ? "—" : `${Math.round(l.rate * 100)}%`}</td>
+                    <td className="py-2 pr-3 text-right text-green-900 font-medium">{AED(l.commission)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
