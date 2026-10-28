@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from "react";
-import { supabase } from "./supabaseClient.js";
 import {
   LayoutDashboard,
   Users,
@@ -391,7 +390,7 @@ const trainerCommission = (trainer, classList, customers) =>
 
 // ---------- Shared bits ----------
 
-function TopBar({ tab, setTab, userEmail }) {
+function TopBar({ tab, setTab }) {
   const items = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "customers", label: "Customers", icon: Users },
@@ -428,10 +427,7 @@ function TopBar({ tab, setTab, userEmail }) {
         </nav>
       </div>
       <div className="px-6 py-5 border-t border-green-100 text-[11px] text-green-500">
-        <div className="truncate mb-2">{userEmail}</div>
-        <button onClick={() => supabase.auth.signOut()} className="text-green-600 hover:text-green-900 underline">
-          Sign out
-        </button>
+        Prototype — data resets on reload.
       </div>
     </div>
   );
@@ -734,7 +730,7 @@ function Dashboard({ trainers, customers, classes, payments }) {
   );
 }
 
-function Customers({ customers, setCustomers, insertCustomer, payments, setPayments, classes, setClasses, trainers, onBookCustomer }) {
+function Customers({ customers, setCustomers, payments, setPayments, classes, setClasses, trainers, onBookCustomer }) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [source, setSource] = useState("new"); // "new" or "existing" — only relevant while adding
@@ -914,7 +910,7 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   // re-renders — checked and set synchronously, immune to any render timing.
   const submittingRef = useRef(false);
 
-  const submit = async () => {
+  const submit = () => {
     if (submittingRef.current) return;
     submittingRef.current = true;
     try {
@@ -975,13 +971,12 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
         return [...ps, { id: uid("p"), date: paymentDate, customerId: editingId, ...paymentFields }];
       });
     } else {
-      // The payment references this customer by id (foreign key), so the customer
-      // row must be confirmed saved before the payment is sent — otherwise the two
-      // near-simultaneous saves can race and the payment gets rejected.
       const personId = form.personId || uid("pp");
       const newId = uid("c");
-      setCustomers((cs) => cs.map((c) => ((c.personId || personKey(c)) === personId ? { ...c, ...contactFields } : c)));
-      await insertCustomer({ id: newId, personId, ...contactFields, ...bookingFields });
+      setCustomers((cs) => {
+        const synced = cs.map((c) => ((c.personId || personKey(c)) === personId ? { ...c, ...contactFields } : c));
+        return [...synced, { id: newId, personId, ...contactFields, ...bookingFields }];
+      });
       setPayments((ps) => [...ps, { id: uid("p"), date: paymentDate, customerId: newId, ...paymentFields }]);
     }
     setForm(blankForm);
@@ -1643,10 +1638,12 @@ function Customers({ customers, setCustomers, insertCustomer, payments, setPayme
   );
 }
 
+
+
 function Trainers({ trainers, setTrainers, classes, customers, timeOff, setTimeOff, onViewSchedule }) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const blankForm = { name: "", cred: "", baseSalary: 2000, commissionRate: 0.2, monthlyTarget: 130, authEmail: "" };
+  const blankForm = { name: "", cred: "", baseSalary: 2000, commissionRate: 0.2, monthlyTarget: 130 };
   const [form, setForm] = useState(blankForm);
   const [detailTrainerId, setDetailTrainerId] = useState(null);
   const [deleteTrainerTarget, setDeleteTrainerTarget] = useState(null);
@@ -1663,7 +1660,7 @@ function Trainers({ trainers, setTrainers, classes, customers, timeOff, setTimeO
 
   const startEdit = (t) => {
     setEditingId(t.id);
-    setForm({ name: t.name, cred: t.cred, baseSalary: t.baseSalary, commissionRate: t.commissionRate, monthlyTarget: t.monthlyTarget, authEmail: t.authEmail || "" });
+    setForm({ name: t.name, cred: t.cred, baseSalary: t.baseSalary, commissionRate: t.commissionRate, monthlyTarget: t.monthlyTarget });
     setOpen(true);
   };
 
@@ -1729,13 +1726,6 @@ function Trainers({ trainers, setTrainers, classes, customers, timeOff, setTimeO
               <span>Monthly target</span><span className="text-green-900">{t.monthlyTarget} hours</span>
             </div>
             <div className="text-[11px] text-green-600 mt-2">Group classes always pay a flat 10%, regardless of volume. Trial classes (under AED {TRIAL_CLASS_THRESHOLD}) earn no commission and don't count toward the bracket.</div>
-            {t.authEmail ? (
-              <div className="flex items-center gap-1 text-[11px] text-green-700 mt-2">
-                <UserRound size={11} /> Portal access: {t.authEmail}
-              </div>
-            ) : (
-              <div className="text-[11px] text-green-500 mt-2">No portal login set up</div>
-            )}
             <button
               onClick={() => onViewSchedule?.(t.id)}
               className="flex items-center gap-1 text-xs text-green-700 border border-green-100 rounded-md px-2.5 py-1.5 mt-3 hover:bg-green-50"
@@ -1891,18 +1881,6 @@ function Trainers({ trainers, setTrainers, classes, customers, timeOff, setTimeO
           <Field label="Monthly target (hours)">
             <input type="number" className={inputCls} value={form.monthlyTarget} onChange={(e) => setForm({ ...form, monthlyTarget: Number(e.target.value) })} />
           </Field>
-          <Field label="Portal login email (optional)">
-            <input
-              type="email"
-              className={inputCls}
-              value={form.authEmail}
-              onChange={(e) => setForm({ ...form, authEmail: e.target.value })}
-              placeholder="trainer@example.com"
-            />
-          </Field>
-          <p className="text-[11px] text-green-600 mb-3">
-            If set, this trainer can sign in with this email (create the account in Supabase → Authentication → Users) and will see only their own schedule — no customers, payments, or other trainers' data.
-          </p>
           <button onClick={submit} className="w-full bg-green-500 text-white rounded-md py-2 text-sm mt-2 hover:bg-green-600">
             {editingId ? "Save changes" : "Save trainer"}
           </button>
@@ -1913,7 +1891,7 @@ function Trainers({ trainers, setTrainers, classes, customers, timeOff, setTimeO
 }
 
 const EXPENSE_CATEGORIES = ["Website", "Branding", "License", "Travel", "Visa", "Marketing", "Accomodation", "Rent", "General", "Phone", "Transport", "Entertainment", "Car", "Fuel", "Investment", "Utilities", "Equipment", "Supplies", "Salaries", "Other"];
-const EXPENSE_PARTNERS = ["Jabir", "Rehana", "Zamzam", "Other"];
+const EXPENSE_PARTNERS = ["Jabir", "Rehana", "Zamzam", "Business", "Other"];
 
 function Expenses({ expenses, setExpenses }) {
   const [open, setOpen] = useState(false);
@@ -2642,8 +2620,7 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
                         disabled={c.status !== "completed" && isFutureSession(c)}
                         className={`${c.status !== "completed" && isFutureSession(c) ? "text-green-300 cursor-not-allowed" : "text-green-500 hover:text-green-700"}`}
                         title={c.status !== "completed" && isFutureSession(c) ? "Can't mark a future class as completed" : "Toggle completed"}
-                      >
-                        <Check size={16} />
+                      >                        <Check size={16} />
                       </button>
                       <button onClick={() => startEdit(c)} className="text-green-600 hover:text-green-900" title="Edit session">
                         <Pencil size={15} />
@@ -2875,11 +2852,6 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
               <AlertTriangle size={13} /> This trainer has booked time off covering this date.
             </div>
           )}
-          {customerConflict && (
-            <div className="flex items-center gap-1 text-xs bg-red-50 text-red-600 rounded-md px-3 py-2 mb-3">
-              <AlertTriangle size={13} /> {nameOf(customers, form.customerId)} already has a booking with {nameOf(trainers, customerConflictClass.trainerId)} at {formatTime12h(customerConflictClass.time)}–{formatTime12h(minutesToHM(sessionEndMinutes(customerConflictClass)))} on {customerConflictClass.date}.
-            </div>
-          )}
           {(trainerNeighborSessions.prev || trainerNeighborSessions.next) && (
             <div className="text-xs bg-green-50 text-green-700 rounded-md px-3 py-2 mb-3 space-y-1">
               <div className="text-[10px] uppercase tracking-wide text-green-600">This trainer's nearest sessions</div>
@@ -2956,6 +2928,11 @@ function Schedule({ classes, setClasses, trainers, customers, setCustomers, time
                 {customerOutOfClasses && (
                   <div className="flex items-center gap-1 text-xs bg-red-50 text-red-600 rounded-md px-3 py-2 mb-3">
                     <AlertTriangle size={13} /> This customer has no unscheduled classes left.
+                  </div>
+                )}
+                {customerConflict && (
+                  <div className="flex items-center gap-1 text-xs bg-red-50 text-red-600 rounded-md px-3 py-2 mb-3">
+                    <AlertTriangle size={13} /> {nameOf(customers, form.customerId)} already has a booking with {nameOf(trainers, customerConflictClass.trainerId)} at {formatTime12h(customerConflictClass.time)}–{formatTime12h(minutesToHM(sessionEndMinutes(customerConflictClass)))} on {customerConflictClass.date}.
                   </div>
                 )}
               </>
@@ -3363,364 +3340,6 @@ function CommissionTab({ trainers, classes, customers }) {
   );
 }
 
-// ---------- Live data sync (Supabase) ----------
-
-// Behaves like useState's setter (accepts a value or an updater function) but also
-// loads the table from Supabase on mount, keeps it live via realtime subscriptions,
-// and pushes any local inserts/updates/deletes back to Supabase — so all 3 staff
-// accounts see the same data update in real time.
-function useSyncedTable(table, seed, enabled, onError) {
-  const [rows, setRows] = useState([]);
-
-  useEffect(() => {
-    if (!enabled) return;
-    let channel;
-    let cancelled = false;
-
-    (async () => {
-      let { data, error } = await supabase.from(table).select("*");
-      // "JWT issued at future" is almost always transient clock skew between the
-      // browser and the server — refreshing the session mints a fresh token and
-      // usually clears it immediately, so try that once automatically before
-      // bothering the user with an error they'd otherwise have to refresh past.
-      if (error && /jwt|issued at future/i.test(error.message || "")) {
-        await supabase.auth.refreshSession();
-        ({ data, error } = await supabase.from(table).select("*"));
-      }
-      if (cancelled) return;
-      if (error) {
-        console.error(`Failed to load ${table}:`, error.message);
-        onError?.(`Couldn't load ${table} (${error.message}). Your changes to it may not be visible or saved.`);
-        return;
-      }
-      // Reflect whatever the database actually has — including genuinely empty.
-      // (This used to auto-insert demo starter rows into an empty table, but that's
-      // not safe once the studio has real data: an empty table can also mean "all
-      // real rows for this table happen to be gone right now", and the demo rows
-      // reference made-up IDs that don't exist elsewhere in a live database.)
-      setRows(data || []);
-
-      channel = supabase
-        .channel(`${table}-changes`)
-        .on("postgres_changes", { event: "*", schema: "public", table }, (payload) => {
-          setRows((prev) => {
-            if (payload.eventType === "DELETE") return prev.filter((r) => r.id !== payload.old.id);
-            const exists = prev.some((r) => r.id === payload.new.id);
-            if (exists) return prev.map((r) => (r.id === payload.new.id ? payload.new : r));
-            return [...prev, payload.new];
-          });
-        })
-        .subscribe();
-    })();
-
-    return () => {
-      cancelled = true;
-      if (channel) supabase.removeChannel(channel);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, table]);
-
-  // "JWT issued at future" is almost always transient clock skew between the
-  // browser and the server — refreshing the session mints a fresh token and
-  // usually clears it immediately. Wraps any Supabase write with one automatic
-  // retry for this specific error, same as the initial load fetch already does.
-  const withJwtRetry = async (fn) => {
-    let { error } = await fn();
-    if (error && /jwt|issued at future/i.test(error.message || "")) {
-      await supabase.auth.refreshSession();
-      ({ error } = await fn());
-    }
-    return { error };
-  };
-
-  const setSynced = (updater) => {
-    setRows((prev) => {
-      const next = typeof updater === "function" ? updater(prev) : updater;
-      if (enabled) {
-        const nextIds = new Set(next.map((r) => r.id));
-        prev.forEach((r) => {
-          if (!nextIds.has(r.id)) {
-            withJwtRetry(() => supabase.from(table).delete().eq("id", r.id)).then(({ error }) => {
-              if (error) {
-                console.error(`Delete failed on ${table}:`, error.message);
-                onError?.(`A delete on ${table} failed to save (${error.message}). It may reappear.`);
-              }
-            });
-          }
-        });
-        next.forEach((r) => {
-          const old = prev.find((p) => p.id === r.id);
-          if (!old) {
-            withJwtRetry(() => supabase.from(table).insert(r)).then(({ error }) => {
-              if (error) {
-                console.error(`Insert failed on ${table}:`, error.message);
-                onError?.(`Saving a new entry to ${table} failed (${error.message}). It's only on this device until this is fixed.`);
-              }
-            });
-          } else if (JSON.stringify(old) !== JSON.stringify(r)) {
-            withJwtRetry(() => supabase.from(table).update(r).eq("id", r.id)).then(({ error }) => {
-              if (error) {
-                console.error(`Update failed on ${table}:`, error.message);
-                onError?.(`Saving a change to ${table} failed (${error.message}). It's only on this device until this is fixed.`);
-              }
-            });
-          }
-        });
-      }
-      return next;
-    });
-  };
-
-  // Inserts one row and, unlike setSynced, can be awaited — needed for cases where
-  // a dependent row (e.g. a payment, which references a customer by foreign key)
-  // must not be saved until this row is confirmed saved first.
-  const insertRow = async (row) => {
-    setRows((prev) => [...prev, row]);
-    if (!enabled) return { error: null };
-    const { error } = await withJwtRetry(() => supabase.from(table).insert(row));
-    if (error) {
-      console.error(`Insert failed on ${table}:`, error.message);
-      onError?.(`Saving a new entry to ${table} failed (${error.message}). It's only on this device until this is fixed.`);
-    }
-    return { error };
-  };
-
-  return [rows, setSynced, insertRow];
-}
-
-function LoginScreen() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const submit = async (e) => {
-    e.preventDefault();
-    setBusy(true);
-    setError("");
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setBusy(false);
-    if (error) setError(error.message);
-  };
-
-  return (
-    <div className="min-h-screen bg-white flex items-center justify-center p-6">
-      <Card className="w-full max-w-sm p-6">
-        <div className="flex items-center gap-2 text-green-500 mb-1">
-          <Sparkles size={18} />
-          <span className="text-xs tracking-[0.25em] uppercase">Management System</span>
-        </div>
-        <h1 className="font-serif text-2xl text-green-900 mb-4">Click A Yoga</h1>
-        <form onSubmit={submit}>
-          <Field label="Email">
-            <input type="email" className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} required />
-          </Field>
-          <Field label="Password">
-            <input type="password" className={inputCls} value={password} onChange={(e) => setPassword(e.target.value)} required />
-          </Field>
-          {error && <div className="text-xs text-red-500 mb-3">{error}</div>}
-          <button type="submit" disabled={busy} className="w-full bg-green-700 text-white rounded-md py-2 text-sm hover:bg-green-800 disabled:opacity-60">
-            {busy ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
-        <p className="text-xs text-green-600 mt-4">Accounts are created by the studio admin in the Supabase dashboard.</p>
-      </Card>
-    </div>
-  );
-}
-
-// ---------- Trainer portal (restricted view for trainer logins) ----------
-// Shown instead of the full app when the signed-in email matches a trainer's
-// portal login. Deliberately has no access to customers, payments, expenses,
-// other trainers, or commission figures — schedule only, and only their own.
-
-function TrainerPortal({ trainer, classes, setClasses, customers, userEmail }) {
-  const [sortDir, setSortDir] = useState("asc");
-
-  const myClasses = classes.filter((c) => c.trainerId === trainer.id);
-  const nameOf = (id) => customers.find((c) => c.id === id)?.name || "—";
-  const locationOf = (id) => customers.find((c) => c.id === id)?.location || "—";
-
-  // ----- Their own commission, period-selectable, from the same engine that
-  // drives the admin Commission tab — a trainer only ever sees their own rows. -----
-  const [commissionMode, setCommissionMode] = useState("month");
-  const [commissionMonth, setCommissionMonth] = useState(thisMonthISO());
-  const [commissionStart, setCommissionStart] = useState(monthStartISO());
-  const [commissionEnd, setCommissionEnd] = useState(monthEndISO());
-  const inCommissionPeriod = (dateStr) =>
-    commissionMode === "month" ? dateStr.startsWith(commissionMonth) : dateStr >= commissionStart && dateStr <= commissionEnd;
-  const commissionPeriodClasses = classes.filter((c) => inCommissionPeriod(c.date));
-  const commissionLines = trainerCommissionBreakdown(trainer, commissionPeriodClasses, customers);
-  const billableCount = commissionLines.filter((l) => !l.isTrial).length;
-  const trialCount = commissionLines.filter((l) => l.isTrial && l.price > 0).length;
-  const commissionTotal = commissionLines.reduce((s, l) => s + l.commission, 0);
-
-  // Defensively re-checks trainerId even though the UI only ever shows their own
-  // sessions — a class can only ever be toggled if it's genuinely this trainer's.
-  const toggleComplete = (id) => {
-    setClasses((cs) =>
-      cs.map((c) => {
-        if (c.id !== id || c.trainerId !== trainer.id) return c;
-        if (c.status !== "completed" && isFutureSession(c)) return c;
-        return { ...c, status: c.status === "completed" ? "scheduled" : "completed" };
-      })
-    );
-  };
-
-  const sorted = [...myClasses].sort((a, b) => {
-    const cmp = (a.date + a.time).localeCompare(b.date + b.time);
-    return sortDir === "asc" ? cmp : -cmp;
-  });
-  const upcoming = sorted.filter((c) => c.status !== "completed");
-  const completed = [...sorted].reverse().filter((c) => c.status === "completed");
-
-  return (
-    <div className="min-h-screen bg-white">
-      <div className="border-b border-green-100 px-6 py-5 flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-green-500 mb-1">
-            <Sparkles size={16} />
-            <span className="text-xs tracking-[0.25em] uppercase">Trainer Portal</span>
-          </div>
-          <h1 className="font-serif text-xl text-green-900">{trainer.name}</h1>
-          <div className="text-xs text-green-600">{userEmail}</div>
-        </div>
-        <button onClick={() => supabase.auth.signOut()} className="text-xs text-green-600 hover:text-green-900 underline shrink-0">
-          Sign out
-        </button>
-      </div>
-
-      <div className="p-6 max-w-2xl mx-auto">
-        <SectionTitle
-          eyebrow="Your schedule"
-          title="Upcoming sessions"
-          action={
-            <button
-              onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
-              className="flex items-center gap-1 text-xs text-green-700 border border-green-100 rounded-md px-2.5 py-1.5 hover:bg-green-50"
-            >
-              <ArrowUpDown size={13} /> {sortDir === "asc" ? "Soonest first" : "Latest first"}
-            </button>
-          }
-        />
-        <div className="space-y-2 mb-8">
-          {upcoming.length === 0 && <div className="text-sm text-green-600">No upcoming sessions.</div>}
-          {upcoming.map((c) => {
-            const isFuture = isFutureSession(c);
-            return (
-              <Card key={c.id} className="p-4 flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-medium text-green-900">{c.date} · {formatTime12h(c.time)}</div>
-                  <div className="text-sm text-green-700">{nameOf(c.customerId)}</div>
-                  <div className="text-xs text-green-600 flex items-center gap-1 mt-0.5">
-                    <MapPin size={11} /> {locationOf(c.customerId)}
-                  </div>
-                </div>
-                <button
-                  onClick={() => toggleComplete(c.id)}
-                  disabled={isFuture}
-                  className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-md shrink-0 ${
-                    isFuture ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-green-700 text-white hover:bg-green-800"
-                  }`}
-                  title={isFuture ? "Can't mark a future class as completed" : "Mark as completed"}
-                >
-                  <Check size={14} /> Mark complete
-                </button>
-              </Card>
-            );
-          })}
-        </div>
-
-        <SectionTitle eyebrow="History" title="Completed sessions" />
-        <div className="space-y-2">
-          {completed.length === 0 && <div className="text-sm text-green-600">No completed sessions yet.</div>}
-          {completed.map((c) => (
-            <Card key={c.id} className="p-4 flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-medium text-green-900">{c.date} · {formatTime12h(c.time)}</div>
-                <div className="text-sm text-green-700">{nameOf(c.customerId)}</div>
-              </div>
-              <button
-                onClick={() => toggleComplete(c.id)}
-                className="text-xs px-3 py-2 rounded-md border border-green-100 text-green-700 hover:bg-green-50 shrink-0"
-              >
-                Undo
-              </button>
-            </Card>
-          ))}
-        </div>
-
-        <SectionTitle
-          eyebrow="Payroll"
-          title="Your commission"
-          action={
-            <PeriodSelector
-              mode={commissionMode}
-              setMode={setCommissionMode}
-              month={commissionMonth}
-              setMonth={setCommissionMonth}
-              startDate={commissionStart}
-              setStartDate={setCommissionStart}
-              endDate={commissionEnd}
-              setEndDate={setCommissionEnd}
-            />
-          }
-        />
-        <Card className="p-5 mb-4">
-          <div className="grid grid-cols-2 gap-y-1 text-sm text-green-700">
-            <span>Base salary</span>
-            <span className="text-green-900 text-right">{AED(trainer.baseSalary)}</span>
-            <span>Commission ({billableCount} billable class{billableCount === 1 ? "" : "es"}{trialCount > 0 ? `, ${trialCount} trial excluded` : ""})</span>
-            <span className="text-green-900 text-right">{AED(commissionTotal)}</span>
-            <span className="font-medium text-green-900 border-t border-gray-100 pt-1 mt-1">Total payout</span>
-            <span className="font-serif text-lg text-green-900 border-t border-gray-100 pt-1 mt-1 text-right">
-              {AED(trainer.baseSalary + commissionTotal)}
-            </span>
-          </div>
-        </Card>
-        {commissionLines.length === 0 ? (
-          <div className="text-sm text-green-600 mb-8">No completed classes in this period.</div>
-        ) : (
-          <div className="overflow-x-auto mb-8">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-green-600 border-b border-green-100">
-                  <th className="py-2 pr-3">Date</th>
-                  <th className="py-2 pr-3">Customer</th>
-                  <th className="py-2 pr-3">Type</th>
-                  <th className="py-2 pr-3 text-right">Price</th>
-                  <th className="py-2 pr-3 text-right">Rate</th>
-                  <th className="py-2 pr-3 text-right">Commission</th>
-                </tr>
-              </thead>
-              <tbody>
-                {commissionLines.map((l) => (
-                  <tr key={l.cls.id} className="border-b border-gray-50">
-                    <td className="py-2 pr-3 text-green-900 whitespace-nowrap">
-                      {l.cls.date}{l.cls.time ? ` ${formatTime12h(l.cls.time)}` : ""}
-                    </td>
-                    <td className="py-2 pr-3 text-green-900">{nameOf(l.cls.customerId)}</td>
-                    <td className="py-2 pr-3 text-green-700">
-                      {l.isTrial ? (
-                        <span className="text-amber-600">Trial</span>
-                      ) : (
-                        classType(l.cls, customers) === "group" ? "Group" : "Private"
-                      )}
-                    </td>
-                    <td className="py-2 pr-3 text-right text-green-700">{AED(l.price)}</td>
-                    <td className="py-2 pr-3 text-right text-green-700">{l.isTrial ? "—" : `${Math.round(l.rate * 100)}%`}</td>
-                    <td className="py-2 pr-3 text-right text-green-900 font-medium">{AED(l.commission)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ---------- App ----------
 
 export default function App() {
@@ -3735,69 +3354,12 @@ export default function App() {
     setScheduleTrainerFilter(trainerId);
     setTab("schedule");
   };
-  const [session, setSession] = useState(undefined); // undefined = still checking, null = signed out
-  const [authTimedOut, setAuthTimedOut] = useState(false);
-
-  useEffect(() => {
-    let settled = false;
-    const timeout = setTimeout(() => {
-      if (!settled) setAuthTimedOut(true);
-    }, 10000);
-
-    supabase.auth.getSession().then(({ data }) => {
-      settled = true;
-      clearTimeout(timeout);
-      setSession(data.session);
-    });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
-    return () => {
-      listener.subscription.unsubscribe();
-      clearTimeout(timeout);
-    };
-  }, []);
-
-  const signedIn = !!session;
-  const [syncError, setSyncError] = useState("");
-  const [trainers, setTrainers] = useSyncedTable("trainers", seedTrainers, signedIn, setSyncError);
-  const [timeOff, setTimeOff] = useSyncedTable("timeOff", seedTimeOff, signedIn, setSyncError);
-  const [expenses, setExpenses] = useSyncedTable("expenses", seedExpenses, signedIn, setSyncError);
-  const [customers, setCustomers, insertCustomer] = useSyncedTable("customers", seedCustomers, signedIn, setSyncError);
-  const [classes, setClasses] = useSyncedTable("classes", seedClasses, signedIn, setSyncError);
-  const [payments, setPayments] = useSyncedTable("payments", seedPayments, signedIn, setSyncError);
-
-  if (session === undefined) {
-    if (authTimedOut) {
-      return (
-        <div className="min-h-screen bg-white flex items-center justify-center p-6">
-          <div className="max-w-sm text-center">
-            <div className="text-red-600 text-sm font-medium mb-2">Couldn't reach the server</div>
-            <p className="text-green-700 text-sm mb-4">
-              This usually means the database is temporarily paused, or this network is blocking the connection. Try refreshing, or check the Supabase project status.
-            </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="bg-green-700 text-white text-sm px-4 py-2 rounded-md hover:bg-green-800"
-            >
-              Try again
-            </button>
-          </div>
-        </div>
-      );
-    }
-    return <div className="min-h-screen bg-white flex items-center justify-center text-green-600 text-sm">Loading…</div>;
-  }
-  if (!session) {
-    return <LoginScreen />;
-  }
-
-  // If this signed-in email matches a trainer's portal login, show the restricted
-  // trainer view instead of the full app — no other tab, no financial data.
-  const myTrainer = trainers.find(
-    (t) => t.authEmail && t.authEmail.trim().toLowerCase() === (session.user?.email || "").toLowerCase()
-  );
-  if (myTrainer) {
-    return <TrainerPortal trainer={myTrainer} classes={classes} setClasses={setClasses} customers={customers} userEmail={session.user.email} />;
-  }
+  const [trainers, setTrainers] = useState(seedTrainers);
+  const [timeOff, setTimeOff] = useState(seedTimeOff);
+  const [expenses, setExpenses] = useState(seedExpenses);
+  const [customers, setCustomers] = useState(seedCustomers);
+  const [classes, setClasses] = useState(seedClasses);
+  const [payments, setPayments] = useState(seedPayments);
 
   return (
     <div className="min-h-screen bg-white flex" style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}>
@@ -3806,7 +3368,7 @@ export default function App() {
         body, table, button, input, select { font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; }
       `}</style>
       <div className="w-64 shrink-0 hidden md:block">
-        <TopBar tab={tab} setTab={setTab} userEmail={session.user?.email} />
+        <TopBar tab={tab} setTab={setTab} />
       </div>
       <div className="flex-1 min-w-0">
         <div className="md:hidden flex gap-2 overflow-x-auto p-3 bg-white border-b border-green-100">
@@ -3821,18 +3383,10 @@ export default function App() {
           ))}
         </div>
         <div className="p-6 md:p-10 max-w-5xl mx-auto" style={{ fontFamily: "'Segoe UI', 'Helvetica Neue', Arial, sans-serif" }}>
-          {syncError && (
-            <div className="flex items-start justify-between gap-3 bg-red-50 text-red-600 text-sm rounded-md px-4 py-3 mb-6">
-              <span>{syncError}</span>
-              <button onClick={() => setSyncError("")} className="text-red-600 hover:text-red-800 shrink-0">
-                <X size={16} />
-              </button>
-            </div>
-          )}
           {tab === "dashboard" && (
             <Dashboard trainers={trainers} customers={customers} classes={classes} payments={payments} />
           )}
-          {tab === "customers" && <Customers customers={customers} setCustomers={setCustomers} insertCustomer={insertCustomer} payments={payments} setPayments={setPayments} classes={classes} setClasses={setClasses} trainers={trainers} onBookCustomer={bookCustomer} />}
+          {tab === "customers" && <Customers customers={customers} setCustomers={setCustomers} payments={payments} setPayments={setPayments} classes={classes} setClasses={setClasses} trainers={trainers} onBookCustomer={bookCustomer} />}
           {tab === "expenses" && <Expenses expenses={expenses} setExpenses={setExpenses} />}
           {tab === "trainers" && <Trainers trainers={trainers} setTrainers={setTrainers} classes={classes} customers={customers} timeOff={timeOff} setTimeOff={setTimeOff} onViewSchedule={viewTrainerSchedule} />}
           {tab === "schedule" && (
